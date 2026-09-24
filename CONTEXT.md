@@ -4,7 +4,9 @@ Current state of the repository. Update this whenever a phase completes or a
 significant decision is made.
 
 **Last updated:** 2026-09-24
-**Current phase:** Phase 1 — Environment & services (complete). Next: Phase 2, gated on data-source decision Q2.
+**Current phase:** Phase 1 — Environment & services (complete).
+**Next phase:** Phase 2 — Market data. **Not started**; blocked on data-source
+decision Q2.
 
 ---
 
@@ -22,20 +24,31 @@ file wherever they disagree.
 
 ## 2. What exists right now
 
-Scaffolding only. **No analytical code has been written.** There is no data
-ingestion, no valuation model, no technical indicator, no NLP, no ML, no
-backtester, and no dashboard.
+Infrastructure and scaffolding only. **No analytical code has been written and
+no Phase 2 work has started.** There is no data ingestion, no valuation model,
+no technical indicator, no NLP, no ML, no backtester, and no dashboard.
 
 | Area | State |
 | --- | --- |
-| Git repository | Branch `main`, pushed to GitHub |
+| Git repository | Branch `main`; see *Git state* below |
 | Python environment | `.venv` on Python 3.13.15 |
-| Package layout | All packages from CLAUDE.md §25 created, docstring only |
+| Package layout | All packages from CLAUDE.md §25 created. Only `backend/` holds implementation code (`config.py`, `database.py`); every other package is still a docstring-only placeholder |
 | Configuration | `backend/config.py` — env-driven `Settings` (Pydantic) |
 | Database | `backend/database.py` engine/session factory; Alembic connects; **zero migrations, zero tables** |
 | Infrastructure | PostgreSQL 17.11 + Redis 7.4.11 via Docker Compose, both healthy |
-| Tests | 43 passing (40 unit + 3 `integration` against live services) |
+| Tests | 43 passing (40 unit + 3 `integration` against live services). Phase 0 ended with 38. |
 | Frontend | `dashboard/` is an empty placeholder |
+
+### Git state (snapshot, 2026-09-24)
+
+| Item | State |
+| --- | --- |
+| Branch | `main` |
+| Local commits | `dff5641` Initial commit → `41f70b5` phase 1 completed |
+| Pushed to `origin/main` | `dff5641` only. **`41f70b5` is local and not yet pushed.** |
+| Working tree | Clean at `41f70b5` |
+
+This snapshot goes stale on every commit or push — update it when either happens.
 
 ---
 
@@ -70,7 +83,9 @@ phase begins.
 
 ---
 
-## 5. Decisions made in Phase 0
+## 5. Decisions
+
+### Phase 0
 
 | # | Decision | Reason |
 | --- | --- | --- |
@@ -82,6 +97,11 @@ phase begins.
 | D6 | `backend/models` exports an empty `MetaData` | Gives autogenerate a stable target before any schema exists. |
 | D7 | `.env.example` contains **no** data-provider keys | No provider has been vetted for licence terms (CLAUDE.md Rules 7–8). |
 | D8 | `dashboard/` left empty | Phase 12. Scaffolding a frontend with nothing to render is pure maintenance cost. |
+
+### Phase 1
+
+| # | Decision | Reason |
+| --- | --- | --- |
 | D9 | Integration tests skip (not fail) when services are down | Keeps the unit suite runnable without Docker; `-ra` reports every skip reason. |
 | D10 | Redis checked with a raw RESP `PING` over a socket | Avoids installing the `redis` client before the `[workers]` phase. |
 | D11 | 5 s database connect timeout | psycopg's 130 s default makes an unreachable database look like a hang. |
@@ -102,9 +122,12 @@ phase begins.
 ## 7. Open decisions
 
 Tracked in detail in [PROJECT_PLAN.md](PROJECT_PLAN.md) → *Open decisions*.
-The blocking one is **data sourcing**: no market-data, fundamental, or news
+The blocking one is **data sourcing (Q2)**: no market-data, fundamental, or news
 provider has been chosen, and none may be added before its licence terms,
 redistribution rules, and rate limits are reviewed.
+
+CI (Q6) is also open but blocks nothing; tests, lint, and type checks run
+locally.
 
 ---
 

@@ -17,7 +17,7 @@ until its leakage and bias guards are tested**.
 | Phase | Name | Status |
 | --- | --- | --- |
 | 0 | Project initialization | ✅ Complete |
-| 1 | Environment & services running | ✅ Complete (CI decision still open, Q6) |
+| 1 | Environment & services running | ✅ Complete |
 | 2 | Market data | ⬜ Not started — blocked on data-source decision |
 | 3 | Fundamental data | ⬜ Not started |
 | 4 | Valuation engine | ⬜ Not started |
@@ -40,7 +40,8 @@ Completed 2026-09-24. Everything below was actually created and verified.
 ### Delivered
 
 * **Git** repository initialized; default branch renamed `master` to `main`.
-  No commits made yet — the first commit is left to the maintainer.
+  No commits existed when Phase 0 finished; the maintainer then made the
+  initial commit `dff5641` and pushed it to `origin/main`.
 * **Python 3.13.15 virtual environment** at `.venv`.
 * **`pyproject.toml`** — project metadata, a deliberately small runtime
   dependency set, later-phase dependencies as optional extras, and
@@ -76,14 +77,16 @@ Completed 2026-09-24. Everything below was actually created and verified.
 
 ### Verification run
 
-| Command | Result |
+Results as recorded when Phase 0 finished. Current results are under Phase 1.
+
+| Command | Result at Phase 0 |
 | --- | --- |
 | `pytest -q` | **38 passed** |
-| `ruff check .` | see summary below |
-| `ruff format --check .` | see summary below |
-| `mypy .` | see summary below |
-| `alembic current` | **not run** — requires a running PostgreSQL |
-| `docker compose config` | **not run** — Docker not installed |
+| `ruff check .` | not recorded |
+| `ruff format --check .` | not recorded |
+| `mypy .` | not recorded |
+| `alembic current` | **not run**: needs a running PostgreSQL |
+| `docker compose config` | **not run**: Docker was not installed yet (installed in Phase 1) |
 
 ### Not done in Phase 0 (by design)
 
@@ -105,7 +108,9 @@ application. Verified 2026-09-24.
       when the services are down).
 * [x] `alembic upgrade head` succeeds against an empty database; `alembic check`
       reports no pending operations.
-* [ ] Decide whether to add CI (GitHub Actions running ruff + mypy + pytest) — Q6.
+
+Whether to add CI is **not** a Phase 1 exit criterion. It remains open as Q6,
+does not block Phase 2, and checks run locally in the meantime.
 
 ### Delivered
 
@@ -118,8 +123,20 @@ application. Verified 2026-09-24.
 * **Fix:** `database/migrations/env.py` escapes `%` before handing the URL to
   Alembic's configparser, which otherwise rejects any percent-encoded password.
 * `integration` pytest marker registered in `pyproject.toml`.
-* Suite: **43 passed** with services up; with services down the 3 integration
-  tests skip and the rest pass.
+* Committed locally as `41f70b5` ("phase 1 completed"). **Not yet pushed**
+  to `origin/main`.
+
+### Verification run
+
+| Command | Result |
+| --- | --- |
+| `pytest -q` | **43 passed** (38 from Phase 0 + 5 new in `tests/test_database.py`) |
+| `pytest` with services unreachable | 3 `integration` tests skipped with a reason; the rest pass |
+| `ruff check .` | All checks passed |
+| `ruff format --check .` | All files formatted |
+| `mypy .` | No issues (strict) |
+| `docker compose config` | Valid |
+| `alembic upgrade head` / `alembic check` | Succeed; no pending operations |
 
 ---
 
@@ -268,7 +285,7 @@ real-money trading is explicitly **not** a goal of this roadmap.
 | Q3 | Fundamental-data source, including **publication timestamps** | Phase 3 | Statement dates alone are insufficient — without publication time, leakage is unavoidable. |
 | Q4 | News sources and their terms of use | Phase 6 | RSS/API only unless a source explicitly permits more. |
 | Q5 | Benchmark and sector index definitions (IHSG, sector indices) | Phase 8 | Needed for abnormal-return calculation. |
-| Q6 | CI provider, and whether to run CI at all | Phase 1 | Local-first is fine for now. |
+| Q6 | CI provider, and whether to run CI at all | Nothing | Not a Phase 1 exit criterion and not a Phase 2 blocker. Local-first is fine for now. |
 | Q7 | Where `.env` secrets live once anything is deployed | later | Out of scope while local-only. |
 
 Q2 is the real gate. Everything downstream of Phase 2 depends on it, and it is

@@ -7,9 +7,11 @@ analysis into an **explainable** research assistant. It is explicitly *not* a
 black-box price predictor — see [CLAUDE.md](CLAUDE.md) for the full philosophy
 and [PROJECT_PLAN.md](PROJECT_PLAN.md) for the roadmap.
 
-> **Status: Phase 1 (environment & services) complete.**
-> No data ingestion, valuation, technical, ML, backtesting, or trading logic
-> exists yet. The directory tree is scaffolding.
+> **Status: Phase 1 (environment & services) complete. 43 tests pass (38 at the end of Phase 0).**
+> PostgreSQL 17 and Redis 7 run in Docker and are reachable from the app.
+> **Next: Phase 2 (market data). Not started; blocked on the data-source
+> decision (Q2).** No data ingestion, valuation, technical, ML, backtesting,
+> or trading logic exists yet. Git state is recorded in [CONTEXT.md](CONTEXT.md).
 
 ---
 
@@ -53,8 +55,8 @@ cp .env.example .env            # then edit POSTGRES_PASSWORD
 
 ### Optional dependency groups
 
-Declared in `pyproject.toml` but **not installed in Phase 0** — install each
-when its phase begins:
+Declared in `pyproject.toml` but **not installed yet**. Install each when its
+phase begins:
 
 ```bash
 python -m pip install -e ".[data]"     # pandas, numpy, scipy      (Phase 2+)
@@ -151,7 +153,10 @@ dashboard/      Next.js frontend (Phase 12 — empty)
 tests/          pytest suite
 ```
 
-Every package currently contains only a docstring stating its responsibility.
+Only `backend/` contains implementation code so far: `backend/config.py`
+(environment-driven settings) and `backend/database.py` (engine, session
+factory, connectivity check). Every other package contains only a docstring
+stating its responsibility.
 
 ---
 
