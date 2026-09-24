@@ -6,7 +6,9 @@ significant decision is made.
 **Last updated:** 2026-09-24
 **Current phase:** Phase 1 — Environment & services (complete).
 **Next phase:** Phase 2 — Market data. **Not started**; blocked on data-source
-decision Q2.
+decision Q2. Q2 requirements are finalized and provider research is recorded in
+[docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md);
+no source has been selected.
 
 ---
 
@@ -44,9 +46,8 @@ no technical indicator, no NLP, no ML, no backtester, and no dashboard.
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Local commits | `dff5641` Initial commit → `41f70b5` phase 1 completed |
-| Pushed to `origin/main` | `dff5641` only. **`41f70b5` is local and not yet pushed.** |
-| Working tree | Clean at `41f70b5` |
+| Commits on `origin/main` | `dff5641` Initial commit → `41f70b5` phase 1 completed → `237878c` docs: reconcile phase 0 and phase 1 documentation |
+| Local commits after `237878c` | Not pushed; list with `git log origin/main..HEAD` |
 
 This snapshot goes stale on every commit or push — update it when either happens.
 
@@ -106,6 +107,16 @@ phase begins.
 | D10 | Redis checked with a raw RESP `PING` over a socket | Avoids installing the `redis` client before the `[workers]` phase. |
 | D11 | 5 s database connect timeout | psycopg's 130 s default makes an unreachable database look like a hang. |
 
+### Phase 2 preparation (Q2, owner decisions)
+
+| # | Decision | Reason |
+| --- | --- | --- |
+| D12 | Budget decided only after provider comparison; cost is not pass/fail | Headline prices hide tier, coverage, and licence differences. |
+| D13 | Private use now; rented cloud/VPS possibly later | Every licence must be checked for rented-server storage now. |
+| D14 | Minimum history 2015-01-01 (≈ 2005 SHOULD) | Covers the §14 validation example plus indicator warm-up. |
+| D15 | Store both price return and total return | Makes gross cash dividends a hard requirement. |
+| D16 | Multiple data sources allowed | Requires shared IDs, per-record provenance, logged disagreements, and a precedence rule defined before ingestion. |
+
 ---
 
 ## 6. Deliberately NOT done
@@ -124,7 +135,10 @@ phase begins.
 Tracked in detail in [PROJECT_PLAN.md](PROJECT_PLAN.md) → *Open decisions*.
 The blocking one is **data sourcing (Q2)**: no market-data, fundamental, or news
 provider has been chosen, and none may be added before its licence terms,
-redistribution rules, and rate limits are reviewed.
+redistribution rules, and rate limits are reviewed. For market data, the
+requirements and the provider evidence gathered on 2026-09-24 are in
+[docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md);
+provider confirmations and the selection itself are still open.
 
 CI (Q6) is also open but blocks nothing; tests, lint, and type checks run
 locally.

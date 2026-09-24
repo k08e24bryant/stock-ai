@@ -18,7 +18,7 @@ until its leakage and bias guards are tested**.
 | --- | --- | --- |
 | 0 | Project initialization | ✅ Complete |
 | 1 | Environment & services running | ✅ Complete |
-| 2 | Market data | ⬜ Not started — blocked on data-source decision |
+| 2 | Market data | ⬜ Not started — blocked on Q2 (requirements finalized and provider research recorded; no source selected) |
 | 3 | Fundamental data | ⬜ Not started |
 | 4 | Valuation engine | ⬜ Not started |
 | 5 | Technical analysis | ⬜ Not started |
@@ -123,8 +123,7 @@ does not block Phase 2, and checks run locally in the meantime.
 * **Fix:** `database/migrations/env.py` escapes `%` before handing the URL to
   Alembic's configparser, which otherwise rejects any percent-encoded password.
 * `integration` pytest marker registered in `pyproject.toml`.
-* Committed locally as `41f70b5` ("phase 1 completed"). **Not yet pushed**
-  to `origin/main`.
+* Committed as `41f70b5` ("phase 1 completed") and pushed to `origin/main`.
 
 ### Verification run
 
@@ -144,14 +143,44 @@ does not block Phase 2, and checks run locally in the meantime.
 
 **Goal:** a reproducible, corporate-action-correct daily OHLCV history.
 
-* [ ] **Choose and document a market-data source** — licence, redistribution
-      terms, rate limits, history depth, and IDX coverage. *Blocking.*
+**Implementation has not started.** No ingestion code, API client, table, or
+migration exists for Phase 2.
+
+### Q2 — market-data source (blocking)
+
+Requirements and provider evidence are recorded in
+[docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md).
+
+* [x] Requirements finalized (2026-09-24): MUST / SHOULD / NICE, multi-source
+      rules, data-integrity and return-methodology requirements.
+* [x] Owner decisions recorded: budget TBD after comparison (not pass/fail);
+      private use now, rented cloud/VPS possibly later; history from
+      2015-01-01 (≈ 2005 SHOULD); store price return **and** total return;
+      multiple sources allowed.
+* [x] Provider research completed and evidenced (2026-09-24): IDX Data
+      Services, ICE, LSEG, Bloomberg, FactSet, S&P Global, EODHD, Twelve Data,
+      Financial Modeling Prep, Yahoo Finance, Sectors, Invezgo, GoAPI, OHLC.dev.
+      **No provider selected, ranked, or recommended.**
+* [ ] Resolve open questions with providers in writing — especially licence
+      retention after termination, rented-server storage, IDX delisted and
+      corporate-action coverage, and raw-price provenance (requirements doc §20).
+* [ ] Select source(s) — a separate, explicit decision.
+* [ ] Define and document the per-field source-precedence rule before ingestion.
+* [ ] Decide the rights-issue adjustment method and the total-return
+      reinvestment price convention.
+* [ ] Sample accuracy audit of the selected source(s) against IDX primary
+      disclosures (requirement M13).
+
+### Implementation (after Q2 is resolved)
+
 * [ ] `companies` table: identifiers, listing and delisting dates, ticker
       history, sector classification.
 * [ ] `prices` table: OHLCV plus an explicit adjusted/unadjusted distinction.
 * [ ] `corporate_actions` table: splits, reverse splits, rights issues,
       dividends, bonus shares.
 * [ ] Ingestion job recording the retrieval timestamp of every fetch.
+* [ ] Every stored record keeps its source identity and retrieval time;
+      cross-source disagreements are logged, never silently merged.
 * [ ] Validation: gaps, duplicates, non-positive prices, zero-volume runs,
       suspensions, implausible jumps not explained by a corporate action.
 * [ ] Point-in-time universe construction that includes delisted companies
@@ -281,7 +310,7 @@ real-money trading is explicitly **not** a goal of this roadmap.
 | # | Decision needed | Blocks | Notes |
 | --- | --- | --- | --- |
 | ~~Q1~~ | ~~Install Docker Desktop, or run PostgreSQL/Redis natively?~~ | — | **Resolved:** Docker Desktop installed; compose stack verified. |
-| Q2 | Market-data source for IDX OHLCV and corporate actions | Phase 2 | Must be assessed for licence, redistribution rights, rate limits, and history depth before any code is written. |
+| Q2 | Market-data source for IDX OHLCV and corporate actions | Phase 2 | Requirements finalized and provider research recorded (2026-09-24) in `docs/data_sources/market_data_requirements.md`. Open: provider confirmations, selection, source-precedence rule. |
 | Q3 | Fundamental-data source, including **publication timestamps** | Phase 3 | Statement dates alone are insufficient — without publication time, leakage is unavoidable. |
 | Q4 | News sources and their terms of use | Phase 6 | RSS/API only unless a source explicitly permits more. |
 | Q5 | Benchmark and sector index definitions (IHSG, sector indices) | Phase 8 | Needed for abnormal-return calculation. |
