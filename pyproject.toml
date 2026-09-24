@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stock-ai"
+version = "0.0.1"
+description = "Quantitative stock intelligence and decision-support system for Indonesian equities"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+license = "MIT"
+authors = [{ name = "Syarif", email = "syarifsanad1@gmail.com" }]
+
+# Phase 0 keeps the runtime surface deliberately small: configuration,
+# database access, and migrations. Data/ML libraries are declared as
+# optional extras below and are installed when their phase begins.
+dependencies = [
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "SQLAlchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+]
+
+[project.optional-dependencies]
+# Installed now: linting, typing, tests.
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+# --- Declared for later phases. NOT installed in Phase 0. ---
+# Phase 2+: market and fundamental data handling.
+data = [
+    "pandas>=2.2",
+    "numpy>=2.0",
+    "scipy>=1.14",
+]
+# Phase 9: machine learning.
+ml = [
+    "scikit-learn>=1.5",
+    "xgboost>=2.1",
+    "lightgbm>=4.5",
+]
+# Backend API service.
+api = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
+# Background task processing.
+workers = [
+    "celery>=5.4",
+    "redis>=5.0",
+]
+
+[tool.setuptools]
+packages = [
+    "backend", "backend.api", "backend.models", "backend.schemas", "backend.services",
+    "data", "data.ingestion", "data.cleaning", "data.validation", "data.features",
+    "ml", "ml.sentiment", "ml.classification", "ml.prediction", "ml.training",
+    "valuation",
+    "event_engine",
+    "backtesting", "backtesting.engine", "backtesting.strategies", "backtesting.metrics",
+    "workers",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv", "database/migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+exclude = ['^[.]venv/', '^database/migrations/']
+plugins = ["pydantic.mypy"]

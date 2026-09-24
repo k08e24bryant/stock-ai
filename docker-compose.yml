@@ -1,0 +1,54 @@
+# Local development services for stock-ai.
+#
+# Only stateful infrastructure runs here. The Python application, tests, and
+# research code run directly on the host (see README.md) -- CLAUDE.md §24.
+#
+#   docker compose up -d      start PostgreSQL + Redis
+#   docker compose ps         check health
+#   docker compose down       stop (data is kept in named volumes)
+#   docker compose down -v    stop and DELETE all local data
+#
+# Values are substituted from the `.env` file in this directory.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: stockai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-stockai}
+      POSTGRES_USER: ${POSTGRES_USER:-stockai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      # Deterministic collation so index/order behaviour is reproducible.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stockai} -d ${POSTGRES_DB:-stockai}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: stockai-redis
+    restart: unless-stopped
+    # Append-only persistence: cached/queued state survives a restart.
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  postgres_data:
+  redis_data:
