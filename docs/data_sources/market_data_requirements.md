@@ -1,7 +1,8 @@
 # Market-Data Source Requirements and Provider Research (Q2)
 
-**Status:** Requirements finalized; provider research recorded. **No provider has
-been selected.** Phase 2 implementation has **not** started.
+**Status:** Requirements finalized; provider research (round 1) and validation
+(round 2) recorded. **No provider has been selected.** Implementation readiness:
+**BLOCKED** (§32). Phase 2 implementation has **not** started.
 **Research date:** all sources below were checked on **2026-09-24** unless stated.
 **Governs:** PROJECT_PLAN.md → Phase 2 and open decision Q2.
 
@@ -118,7 +119,7 @@ Because multiple sources are allowed (F5):
 5. **Source disagreements are logged**, never silently resolved.
 6. **No silent merging** of values from different sources.
 7. **A source-precedence rule must be established and documented before
-   ingestion.** It is intentionally **not** defined here.
+   ingestion.** A proposed rule is documented in §21; it is not yet adopted.
 
 A factual framework for defining the rule later (a method, not a rule):
 
@@ -154,9 +155,9 @@ A factual framework for defining the rule later (a method, not a rule):
 * Total return additionally includes cash dividends.
 * Dividend amounts are stored **gross**.
 * **Modelling assumption (not provider-provided fact):** dividends are
-  reinvested at the ex-date. The exact reinvestment price convention is an open
-  question (§20).
-* The rights-issue adjustment method is an open question (§20).
+  reinvested at the close of the ex-date (§24).
+* The rights-issue methodology is proposed in §25; the out-of-the-money case
+  and the backtest treatment are still open (§33).
 * Vendor-adjusted series may be used only to cross-check in-house adjustments.
 
 ---
@@ -174,7 +175,7 @@ A factual framework for defining the rule later (a method, not a rule):
 | **S** | Requires contacting sales/provider |
 | **I** | Search-engine-indexed text only; page body could not be retrieved |
 
-Bracketed numbers refer to §22.
+Bracketed numbers refer to §35.
 
 ### Screening-order comparison
 
@@ -398,54 +399,533 @@ No candidate documented IDX ticker-change history with effective dates.
 
 ---
 
-## 20. Open questions
+## 20. Validation round 2 — scope and method
 
-**Project-level (to decide before ingestion)**
-1. Source-precedence rule per field (§7).
-2. Total-return reinvestment price convention (e.g. ex-date close) — assumption
-   to document.
-3. Rights-issue adjustment method.
-4. Source of IDX market-structure reference data (lot size, tick size,
-   auto-rejection limits, sessions, settlement) — to be verified against IDX
-   primary sources.
-5. IHSG source (M10) — Twelve Data lists `JKSE` "Jakarta Composite Index" in its
-   reference data (observed [21]); other providers ND.
-6. Budget (F1).
+Date: **2026-09-24** (same day as round 1). Sections 10–19 remain the round-1
+record; where round 2 adds or corrects evidence, sections 21–33 take precedence.
 
-**Per provider (to confirm in writing)**
-* **IDX:** individual eligibility; EOD/historical and Data Reference licence
-  terms (storage, derived, cloud, retention after termination); delisted
-  coverage; corporate-action fields; delivery method; price.
-* **EODHD:** post-termination retention (§11 contradiction); rented-server
-  storage; exchange-origin vs aggregated JK prices; JK start date; JK delisted
-  coverage; dividend record/payment-date coverage for JK; rights issues; plan
-  needed for trading-hours/holiday API.
-* **Twelve Data:** "permitted timeframes" for storage; delisted XIDX price
-  history; XIDX depth; Pro variant prices; ISIN add-on cost; rights issues;
-  rented-server storage.
-* **FMP:** IDX coverage scope on Ultimate; `.JK` delisted and CA coverage;
-  scope of the derivative-works clause.
-* **Sectors / Invezgo / GoAPI / OHLC.dev:** raw OHLCV availability, licence
-  terms, delisted coverage, history depth, whether they hold an IDX
-  redistribution licence.
-* **LSEG / Bloomberg / FactSet / S&P / ICE:** IDX coverage, delisted coverage,
-  individual eligibility, price.
+Scope: resolve the project-level questions (precedence, dividend reinvestment,
+rights issues, IDX trading rules, IHSG) and validate each candidate field by
+field. Method: provider documentation and terms; official regulator/exchange
+documents where reachable; published index-provider methodologies; two
+documented reference endpoints queried with public demo keys. **No account was
+opened, no paid data was retrieved, and no provider was contacted.** Anything
+that needs a provider account or written confirmation remains open.
 
-## 21. Research date
+Additional status label used from here on:
 
-All findings: **2026-09-24**. Terms change; re-check each source's terms at
-selection time and record the version read.
+* **UNCLEAR — requires written provider confirmation.** The terms are silent or
+  ambiguous. Permission is **not** inferred.
 
-Retrieval notes (2026-09-24):
-* idx.co.id and data.idx.co.id returned HTTP 403 to automated requests
-  (including robots.txt); no attempt was made to bypass this.
-* sectors.app returned HTTP 429.
-* FactSet developer/marketplace pages returned no body text (client-rendered).
+---
+
+## 21. Source-precedence rule (proposed)
+
+This is a **documented proposal**, to be adopted (or amended) before ingestion.
+It is deterministic and field-specific; it never ranks providers globally.
+
+### 21.1 Evidence tiers (per field, per source)
+
+| Tier | Definition | Examples |
+| --- | --- | --- |
+| T1 | Official primary record for that field | IDX official close; issuer/KSEI/IDX corporate-action terms; IDX regulations for trading rules; IDX listing, delisting, and suspension announcements |
+| T2 | Licensed vendor data whose documentation states it is exchange-originated **for IDX** | none confirmed as of 2026-09-24 |
+| T3 | Licensed vendor data that is aggregated or derived, or whose IDX provenance is undocumented | e.g. EODHD's terms describe VWAP aggregation from non-exchange sources [13] |
+| X | Unlicensed, unofficial, or scraped where prohibited | never ingested |
+
+A source's tier is assigned **per field** from recorded evidence (a vendor can
+be T2 for closes and T3 for dividends), and stored with a reference to that
+evidence.
+
+### 21.2 Ordered rules
+
+For a given security, field, and effective date:
+
+1. **Raw beats derived.** A raw observation (e.g. unadjusted close, announced
+   dividend amount) always outranks a vendor-derived value (adjusted close,
+   split-adjusted dividend). Derived vendor values are used only to cross-check
+   in-house calculations.
+2. **Lower tier number wins** (T1 > T2 > T3).
+3. **Corporate-action terms come from the announcement.** Ratio, exercise
+   price, amount, and dates are taken from the issuer/KSEI/IDX announcement
+   (T1) where available; a vendor's reconstructed ratio never overrides
+   announced terms.
+4. **Versioned beats unversioned; later correction from the same source
+   supersedes its earlier version.** Both versions are kept; the earlier one is
+   marked superseded, never deleted.
+5. **Point-in-time rule for historical use.** For backtests and features, only
+   observations whose availability time ≤ decision time are eligible. A better
+   source arriving later does not rewrite what the system "knew" earlier; the
+   resolution is computed as of each decision time (bitemporal: effective time
+   and knowledge time).
+6. **Fixed tie-break.** If sources remain tied, a pre-declared, versioned
+   source order **per field** decides. The order is configuration, recorded in
+   the repository, and changed only by an explicit, dated decision.
+7. **Traceability.** Every resolved value references the winning observation
+   and lists the losing observations.
+
+### 21.3 Preconditions before the rule can be finalized
+
+* Tier assignments need evidence per field and source (sections 28–30).
+* Tie-break orders need the reconciliation sample (M13).
+* Rule 5 needs availability timestamps; where a source provides none, the
+  retrieval time is the conservative availability time (§22).
+
+---
+
+## 22. Provenance requirements (every ingested record)
+
+Documentation only; no tables are defined here.
+
+| Field | Mandatory | Meaning |
+| --- | --- | --- |
+| `source_id` | **Yes** | Provider/dataset identifier (e.g. provider + endpoint/dataset name) |
+| `source_security_id` | **Yes** | The identifier the source used (ticker, vendor ID, FIGI, ISIN) exactly as received |
+| `retrieved_at` | **Yes** | UTC timestamp when the record was fetched |
+| `ingestion_run_id` | **Yes** | Identifier of the ingestion run that produced it |
+| `raw_record_ref` | **Yes** | Pointer to the immutable raw payload (storage key/URI) plus a content checksum |
+| `licence_ref` | **Yes** | Licence/terms version under which the record was obtained (URL + date read) |
+| `parser_version` | **Yes** | Version of the code that parsed the raw payload |
+| `revision_status` | **Yes** | `original` / `correction` / `superseded`, with a link to the prior version |
+| `available_at` | **Yes** (with fallback) | When the information was public. If the source gives no timestamp, use `retrieved_at` and flag `available_at_is_fallback = true` |
+| `source_timestamp` | Optional | Any as-of/last-modified time supplied by the source |
+| `published_at` | Optional (mandatory for corporate actions **when obtainable**) | Announcement/publication time of the underlying event |
+| `source_version` | Optional | Source-provided version, changelog entry, or API version |
+| `request_params` | Optional | Parameters used for the request, for reproducibility |
+
+Rationale: CLAUDE.md §15 (time semantics), §16 (survivorship), invariant 6
+(raw vs derived), and the multi-source rules in §7.
+
+---
+
+## 23. Disagreement handling
+
+Documentation only.
+
+**Procedure (for every field with more than one observation):**
+
+1. **Detect**: compare observations for the same security, field, and
+   effective date after unit normalization (currency, shares vs lots,
+   split-adjusted vs raw). Tolerances are per field and must be defined before
+   ingestion; until then the default is **exact equality** after normalization.
+2. **Preserve**: keep every observation. Nothing is overwritten or deleted.
+3. **Record provenance** for each observation (§22).
+4. **Apply precedence** (§21) to produce the resolved value.
+5. **Flag**: write a disagreement record (field, sources, values, rule applied,
+   resolution) and surface it in validation reports.
+6. **Never silently overwrite** the losing observation.
+
+**Examples**
+
+| Disagreement | Handling notes |
+| --- | --- |
+| OHLC differs | Check whether one source is adjusted and the other raw before flagging. Prefer the T1 official close; otherwise rules 2–6. |
+| Volume differs | Normalize units (shares vs lots; IDX lot = 100 shares since 2014-01-06, §26) and market scope (regular vs negotiated) first. |
+| Dividend amount differs | Compare gross vs net and split-adjusted vs unadjusted first. Announced gross amount (T1) wins. |
+| Corporate-action date differs | Distinguish cum/ex/recording/payment dates before flagging. Announcement terms (T1) win; flag for manual review because a date error shifts the adjustment. |
+| Ticker mapping differs | Never auto-resolve. Map through the stable identifier; flag for manual review with effective dates. |
+
+---
+
+## 24. Total-return and dividend-reinvestment convention
+
+**Evidence from published index methodologies:**
+
+* MSCI (Index Calculation Methodology, August 2025): "Daily Total Return (DTR)
+  methodology reinvests regular cash distributions in indexes on the ex-date of
+  such distributions." It also states that if a security does not trade on the
+  ex-date, "the reinvestment is postponed to the day when the security resumes"
+  trading (§2.2.1, "Timing of Reinvestment"). **C** [50]
+* S&P Dow Jones Indices (Index Mathematics, April 2026): total return
+  counterparts assume "dividends are reinvested in the index after the close on
+  the ex-date". **I** — the PDF returned HTTP 403 [51].
+
+**Project convention — a MODELLING ASSUMPTION, not provider-supplied data:**
+
+* The gross cash dividend with ex-date *t* is reinvested at the **close of the
+  ex-date**, i.e. the ex-date total return is
+  `(P_t + D_t) / P_{t-1} − 1`, where `P` are raw closes put on a comparable
+  basis for any capital change between *t−1* and *t*, and `D_t` is the gross
+  dividend per share.
+* This matches the MSCI convention [50] and, if confirmed, the S&P DJI
+  convention [51].
+* Reinvesting "at the ex-date adjusted price" is not a separate convention: a
+  dividend-adjusted series built with the same ex-date factor produces the same
+  return. The adjusted series is derived from this convention, not an
+  alternative to it.
+* If the security is suspended on the ex-date, reinvestment is postponed to the
+  next trading day (following MSCI [50]). **Assumption.**
+* Amounts are gross (F4). Withholding tax is not modelled. MSCI's net indexes
+  use a withholding rate for Indonesia [50]; a net variant is out of scope.
+
+---
+
+## 25. Rights-issue methodology
+
+**Evidence:**
+
+* MSCI: "the adjustment for a rights issue is always theoretical (the intrinsic
+  value of the right is the difference between the underlying stock price and
+  the subscription price), even if the rights will list on an exchange"; its
+  event table uses a "Theo-ex price taking into account the terms of the event".
+  **C** [50]
+* Indonesian rights issues (HMETD) are governed by POJK 32/POJK.04/2015 as
+  amended by POJK 14/POJK.04/2019 [52][53] (identified on ojk.go.id; full text
+  not reviewed in this round).
+* KSEI announces HMETD schedules. Search-indexed text lists cum date, ex date,
+  recording date, distribution date, and rights trading start and end.
+  **I** — the KSEI pages returned HTTP 404/500 on 2026-09-24 [54][55].
+
+**Proposed methodology (documentation only; nothing implemented):**
+
+| Use | Treatment |
+| --- | --- |
+| Adjusted historical prices | Theoretical ex-rights price (TERP), consistent with MSCI [50]. With *M* old shares entitled to *N* new shares at subscription price *S* and cum-rights close *P*: `TERP = (M·P + N·S) / (M + N)`. Price-adjustment factor for pre-ex-date prices = `TERP / P`. |
+| Total return | The same factor applied on the ex-date, so a holder's value is preserved at the theoretical value of the right. **Assumption.** |
+| Backtesting | **Open decision:** (a) theoretical treatment (as indexes do), or (b) explicit HMETD handling: rights received, then exercised (requires cash) or sold at observed rights prices. (b) needs rights-security price history. |
+| Valuation | Per-share fundamentals (EPS, BVPS, DPS) rescaled by the same factor so they align with the adjusted price history. |
+| Event studies | Rights ex-dates inside an event window are flagged as confounding events; announcement time comes from the issuer/KSEI disclosure. |
+
+**Open:** treatment when `S ≥ P` (rights out of the money). The MSCI text
+reviewed does not address it (no match for "in the money"). Must be decided
+before implementation.
+
+**Data required per rights issue (primary sources: issuer prospectus/disclosure,
+KSEI, IDX):** ratio (old : new), subscription price, cum date (regular and cash
+market), ex date, recording date, rights distribution date, rights trading
+period, exercise period, new-share listing date, rights ticker, announcement
+date/time.
+
+**Provider coverage:** no candidate vendor documents these fields (§29). Sectors
+lists rights issues as covered but documents no fields [29].
+
+---
+
+## 26. IDX trading rules — sources and verification status
+
+IDX regulation pages and PDFs returned HTTP 403 to automated requests; this was
+not bypassed. Status labels: **VERIFIED-PRIMARY** (official document read),
+**VERIFIED-COPY** (full text of an official document read from a third-party
+copy), **SECONDARY** (reputable secondary text read), **I** (search-indexed
+only).
+
+| Rule | As documented | Effective | Source | Status |
+| --- | --- | --- | --- | --- |
+| Lot size | 1 round lot = **100** shares (previously 500) | 2014-01-06 | Kep-00071/BEI/11-2013, issued 2013-11-08 [43] | VERIFIED-COPY |
+| Tick size (2014) | < Rp500: Rp1; Rp500–<Rp5,000: Rp5; ≥ Rp5,000: Rp25 | 2014-01-06 | Kep-00071/BEI/11-2013 [43] | VERIFIED-COPY. A search summary stated Rp10 for the middle band, which contradicts the document. |
+| Tick size (2016) | < Rp200: Rp1; Rp200–500: Rp2; Rp500–2,000: Rp5; Rp2,000–5,000: Rp10; > Rp5,000: Rp25 | Effective date not verified | Cites Kep-00023/BEI/04-2016 [45] | SECONDARY |
+| Price limits (2020–2023) | ARA 35% / 25% / 20% by price band (Rp50–200 / >200–5,000 / >5,000); ARB 7% | until 2023-05-31 | [46] | SECONDARY |
+| Price limits (phase I) | ARB 15%, ARA unchanged | 2023-06-05 | [46] | SECONDARY |
+| Price limits (phase II) | Symmetric: ARB = ARA per band (35% / 25% / 20%) | 2023-09-04 | [46]; Peraturan II-A Kep-00055/BEI/03-2023 identified [44] | SECONDARY; official PDF 403 |
+| Price limits (2025) | ARB **15%** for all price ranges (Main, Development, New Economy boards; ETFs; REITs); IHSG trading-halt thresholds 8% and 15%, suspension at 20% | 2025-04-08 | Kep-00002/BEI/04-2025 and Kep-00003/BEI/04-2025 as reported by [47] | SECONDARY |
+| Trading sessions | Conflicting: Mon–Thu 09:00–12:00 & 13:30–15:49, Fri 09:00–11:30 & 14:00–15:49 WIB [15]; other secondary text differs | varies by period | IDX page identified [48] | UNVERIFIED — conflicting |
+| Closing price | Closing-auction price; auction results 16:00–16:05 JKT; closes available 16:15 | as of Aug 2025 | MSCI Appendix VII [50] | SECONDARY (verified text) |
+| Trading calendar | 2026 calendar published as Peng-00171/BEI.POP/09-2025 | 2026 | IDX PDF identified [49] | I — 403. Calendars for 2015–2025 are needed. |
+| Settlement | T+2: first T+2 trade date 2018-11-26 (last T+3 trade date 2018-11-23; first T+2 settlement 2018-11-28) | 2018-11-26 | OJK press release SP 80/DHMS/OJK/XI/2018 [42] | **VERIFIED-PRIMARY** |
+
+Notes:
+
+* Within the required window (2015-01-01 onward) the lot size is 100 shares.
+  No later change was found in the sources checked; that is not proof that none
+  exists.
+* Price limits, tick sizes, and sessions changed several times inside the
+  window. A time-versioned reference dataset built from the official decisions
+  is required, and each row must be verified against the official text.
+
+---
+
+## 27. IHSG source analysis
+
+| Candidate | Evidence IHSG exists | 2015+ history verified | Date semantics | Storable (licence) | Status |
+| --- | --- | --- | --- | --- | --- |
+| IDX (index owner) | "IDX Index License" product listed (I) [1] | S | S | S | UNVERIFIED |
+| Twelve Data | `JKSE` "Jakarta Composite Index", IDR, XIDX in reference data (observed) [21] | **No** — `earliest_timestamp` with the demo key returned 401 [58] | Local exchange time per API schema [19] | Deletion within 30 days after termination (§16.2) [18] | NOT VERIFIED; permanent storage not permitted |
+| EODHD | Index tickers use the `.INDX` suffix; `JKSE.INDX` is not in the EODHD docs checked | **No** — demo request returned "Forbidden" [59] | Trading day, local time (generic) [7] | UNCLEAR [13] | NOT VERIFIED |
+| FMP | Generic index-history endpoints exist; `^JKSE` not documented | No | ND | Deletion on termination [23] | NOT VERIFIED |
+| LSEG / Bloomberg / FactSet / S&P / ICE | Not documented publicly | S | S | S | UNVERIFIED |
+| Yahoo | — | — | — | Automated collection prohibited [26] | EXCLUDED |
+
+IHSG is an IDX index. Whether any vendor holds the licence needed to deliver
+IHSG values for storage is **not documented** and must be confirmed.
+**No candidate currently satisfies M10 with evidence.**
+
+---
+
+## 28. Per-provider validation
+
+### 28.1 Licensing
+
+Legend: **Yes (C)** confirmed by terms · **No (X)** prohibited by terms ·
+**UNCLEAR** = UNCLEAR — requires written provider confirmation ·
+**n/a** not applicable.
+
+| Question | EODHD (personal) | Twelve Data (individual) | FMP (personal) | Yahoo | Invezgo | Sectors / GoAPI / OHLC.dev | IDX, ICE, LSEG, Bloomberg, FactSet, S&P |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Automated retrieval | Yes (C) — API plans [12] | Yes (C), within rate limits (§2.3(h)) [18] | Yes (C) — API plans [22] | **No (X)** §2.4(i) [26] | UNCLEAR — site terms: "Don't use bots" [33]; API product exists [32] | UNCLEAR | UNCLEAR |
+| Permanent storage | UNCLEAR [13] | **No (X)** after termination (§16.2) [18] | **No (X)** after termination (§6.3) [23] | n/a | UNCLEAR | UNCLEAR | UNCLEAR |
+| Storage after termination | UNCLEAR — indexed deletion clause vs current terms [13] | **No (X)** — delete within 30 days [18] | **No (X)** — delete incl. cached [23] | n/a | UNCLEAR | UNCLEAR | UNCLEAR |
+| Derived data | UNCLEAR — "manipulate, and analyze" permitted; derived data not defined [13] | Yes (C) if not reverse-engineerable (§2.2(c)); retention after termination UNCLEAR [18] | UNCLEAR during subscription (§2.6.1(ii)); **No (X)** after termination (§6.2) [23] | n/a | UNCLEAR | UNCLEAR | UNCLEAR |
+| Private use | Yes (C) [13] | Yes (C) — "personal, internal, and non-commercial" [17] | Yes (C) §2.2.1 [23] | n/a | Yes (C), website terms [33] | UNCLEAR | UNCLEAR |
+| Cloud/VPS storage | UNCLEAR | UNCLEAR — "Authorized User" includes customer-authorized "computerized systems" [18] | UNCLEAR — must notify FMP of storage locations (§2.8) [23] | n/a | UNCLEAR | UNCLEAR | UNCLEAR |
+| Multiple rented servers | UNCLEAR | UNCLEAR | UNCLEAR (§2.8) | n/a | UNCLEAR | UNCLEAR | UNCLEAR |
+| Combination with another provider | UNCLEAR (not addressed) | UNCLEAR — prohibited only "to create competing products" (§2.3(k)) [18] | UNCLEAR | n/a | UNCLEAR | UNCLEAR | UNCLEAR |
+| Redistribution | **No (X)** [13] | Only via tier/add-on/agreement (§2.2(b),(e)) [18] | **No (X)** §2.6.1(i) [23] | n/a | **No (X)** without permission [33] | UNCLEAR | UNCLEAR |
+| Private dashboard display | UNCLEAR — "displaying" prohibited; display to oneself not addressed [13] | Yes (C) — display to Authorized Users (§2.2(b)) [18] | UNCLEAR — "publicly perform or display" prohibited [23] | n/a | UNCLEAR | UNCLEAR | UNCLEAR |
+
+EODHD commercial plans (for reference): the "Internal Use" plan restricts use to
+within the company, and "Displaying the data or sharing it with individuals
+outside your company is not permissible". The "Custom Plan" lists "Negotiable
+terms including data download to corporate servers" [57].
+
+### 28.2 Historical coverage (IDX-specific)
+
+| Check | EODHD | Twelve Data | FMP | Sectors | Invezgo | IDX / institutional |
+| --- | --- | --- | --- | --- | --- | --- |
+| Indonesian equities | C — 924 active JK tickers [6] | C — 944 active XIDX [20] | C — `.JK` pages [25] | C [28] | C — "900+" [32] | S |
+| 2015 onward | ND for JK (plan "30+ years" is generic) [12] | ND (endpoint exists) [19] | ND | ND | C — "since 2009" (vendor claim) [32] | S |
+| Delisted IDX equities | ND for JK (generic endpoint) [11] | 180 delisted identifiers listed (observed) [20]; history ND | ND | ND | ND | S |
+| History through final trading day | Generic: "Delisted symbols retain their full history" [7]; JK ND | ND | ND | ND | ND | S |
+| Ticker changes / renames | US only [11]; JK ND | ND | ND | ND | ND | S |
+| Stable IDs | ISIN partial (generic) [11] | FIGI (observed) [20]; ISIN add-on [19] | ND | ND | ND | S |
+
+### 28.3 Corporate-action fields
+
+Legend: **documented** = field in official docs/schema · **ND** = not
+documented · **absent** = the official API schema has no such field.
+
+| Field | EODHD [9] | Twelve Data [19] | FMP | Sectors [29] | Invezgo | IDX Data Reference |
+| --- | --- | --- | --- | --- | --- | --- |
+| Cash dividend amount | documented (`value`, `unadjustedValue`) | documented (`amount`) | ND (IDX) | ND (covered, fields ND) | ND | S |
+| Ex-date | documented (`date`) | documented (`ex_date`) | ND | ND | ND | S |
+| Record date | documented, "varying coverage"; IDX ND | absent | ND | ND | ND | S |
+| Payment date | documented, "varying coverage"; IDX ND | absent | ND | ND | ND | S |
+| Splits | documented (ratio `new/old`) | documented (`ratio`, `from_factor`, `to_factor`) | ND | ND (covered) | ND | S |
+| Reverse splits | documented (generic examples) | ND | ND | ND | ND | S |
+| Bonus / stock dividends | documented as non-standard split ratios (generic) | ND | ND | ND | ND | S |
+| Rights issues | ND | ND | ND | ND (covered, fields ND) | ND | S |
+| Rights ratio | ND | ND | ND | ND | ND | S |
+| Exercise price | ND | ND | ND | ND | ND | S |
+| Rights dates | ND | ND | ND | ND | ND | S |
+
+### 28.4 Market data
+
+| Check | EODHD | Twelve Data | FMP | Sectors | Invezgo |
+| --- | --- | --- | --- | --- | --- |
+| Raw OHLCV | documented "raw" [7]; provenance contradiction [13][56] | `adjust=none` [19] | "Unadjusted" (split) endpoint [24]; IDX ND | ND (close/volume/market cap only, v1 retired) [30] | ND |
+| Adjusted | `adjusted_close` only (splits + dividends) [7] | `adjust=splits/dividends/all` [19] | dividend-adjusted endpoint listed [22] | ND | "Full corporate action adjusted" [32] |
+| Volume unit | "adjusted for splits only"; shares vs lots ND [7] | ND | ND | ND | ND |
+| Currency | IDR [6] | IDR (observed listing) [20] | ND | IDR [30] | ND |
+| Date semantics | trading day in local market time [7] | bar-open datetime at local exchange time [19] | ND | ND | ND |
+| Regular vs negotiated | ND | ND | ND | ND | ND |
+| Suspension handling | ND | ND | ND | ND | ND |
+
+EODHD's data-sources page names direct exchange contracts for the US, Europe
+(Cboe), Australia (ASX), and Canada, plus data "from CFDs and market makers";
+**Indonesia is not named** [56].
+
+### 28.5 Automation
+
+| Check | EODHD | Twelve Data | FMP | Sectors | Invezgo |
+| --- | --- | --- | --- | --- | --- |
+| API / auth | REST, `api_token` parameter [7] | REST, `apikey` parameter [19] | REST [24]; auth details not reviewed | REST, credit-based [29]; auth details not reviewed | REST [32]; auth ND |
+| Rate limits | 100k/day; 1,000/min (paid) [12] | credits/min by tier [17] | 300–3,000/min [22] | monthly credit limit; HTTP 429 [29][30] | 250–2,000/min; 30k–320k/month [32] |
+| Historical endpoint | per ticker [7] | `time_series`, ≤ 5,000 points/request [19] | per ticker [24] | v2 `/close/` per date, paginated [29] | ND |
+| Bulk endpoint | whole exchange per day, 100 calls, historical dates allowed [10] | batch requests (pricing page) [17] | bulk on Ultimate [22] | ND | ND |
+| Pagination | not needed per ticker | `/stocks` paginated [19] | ND | yes [29] | ND |
+| Backfill feasibility (≈1,300 securities × 10 yrs) | feasible within limits (by docs) | feasible if the tier allows (≈1 request per ticker) | feasible on Ultimate (by docs) | ≈2,700 date requests (by docs) | ND |
+| Daily incremental | bulk per exchange-day [10] | per ticker or batch | bulk (Ultimate) | per date | ND |
+
+Feasibility here is arithmetic from documented limits, **not tested** with IDX
+data.
+
+### 28.6 Cost (as displayed on 2026-09-24)
+
+| Item | EODHD | Twelve Data | FMP | Invezgo | Others |
+| --- | --- | --- | --- | --- | --- |
+| Free tier | 20 calls/day, past year, EOD [12] | Basic: 8 credits/min, 800/day, 3 exchanges (no IDX) [17][16] | 250 calls/day [22] | 1-month trial [32] | GoAPI free limited quota [34]; others ND/S |
+| Paid tiers & price | Personal: $19.99–$99.99/mo; Commercial Internal Use $399/mo; Enterprise $2,499/mo; Custom by request [12][57] | Grow $79/mo; Pro $229/mo (as displayed); Ultra $999/mo [17] | Starter $19, Premium $49, Ultimate $99 per month, billed annually [22] | IDR 499,900 – 4,000,000/mo [32] | S |
+| Billing | monthly or yearly | monthly or annual | billed annually (displayed) | monthly | S |
+| IDX access | All World and above [12]; JK page mentions All World Extended for the hours API [6] (U) | **Pro** (individual) / **Venture** (business) [16] | **Ultimate** ("Global Coverage") [22] | included | S |
+| History | "30+ years" (plan) [12] | ND | Ultimate "Full Historical Access" [22] | "since 2009" [32] | S |
+| Delisted | listed as included (All World) [12] | ND | endpoint listed [22] | ND | S |
+| Corporate actions | splits/dividends included (All World) [12] | Grow+ [17] | endpoints listed [22] | adjusted prices only | S |
+| Security IDs | ISIN where available [11] | FIGI (listing); ISIN paid add-on; FIGI parameter on Ultra [19] | ND | ND | S |
+| Contact sales | Custom plan [57] | business plans | commercial pages | — | IDX, ICE, LSEG, Bloomberg, FactSet, S&P |
+
+---
+
+## 29. Source matrix
+
+**Confidence** describes the evidence type, not the quality of the provider:
+**High** = official documentation specific to IDX; **Medium** = official
+documentation that is generic (not IDX-specific) or an observed API listing;
+**Low** = vendor marketing, search-indexed text, or secondary sources.
+
+| Required data | Provider | Coverage | License | Storage | Cloud | API | Cost | Confidence | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Daily OHLCV (raw) | EODHD | JK active tickers; depth ND | Personal; store/analyse permitted | UNCLEAR | UNCLEAR | Yes | $19.99+/mo | Medium | Provenance contradiction (VWAP/non-exchange) |
+| Daily OHLCV (raw) | Twelve Data | XIDX; depth ND | Internal use | No (after termination) | UNCLEAR | Yes | Pro tier | Medium | `adjust=none` required |
+| Daily OHLCV (raw) | FMP | `.JK` pages; depth ND | Personal | No (after termination) | UNCLEAR | Yes | Ultimate | Low | IDX coverage scope ND |
+| Daily OHLCV | Invezgo | IDX; "since 2009" | UNCLEAR | UNCLEAR | UNCLEAR | Yes | IDR/mo | Low | Adjusted prices; raw ND |
+| Daily OHLCV | IDX Data Services | IDX (official) | S | S | S | S | S | Low (I) | Official source; site 403 |
+| Delisted history | EODHD | endpoint generic; JK ND | as above | UNCLEAR | UNCLEAR | Yes | All World | Medium | — |
+| Delisted history | Twelve Data | 180 identifiers listed; history ND | as above | No | UNCLEAR | Yes | Pro | Medium | — |
+| Cash dividends | EODHD | fields documented; JK ND | as above | UNCLEAR | UNCLEAR | Yes | All World | Medium | Record/payment dates "varying coverage" |
+| Cash dividends | Twelve Data | ex-date + amount only | as above | No | UNCLEAR | Yes | Grow+/Pro | Medium | No record/payment date |
+| Rights issues | Sectors | "covered"; fields ND | ND | ND | ND | Yes | ND | Low | — |
+| Rights issues | Issuer / KSEI / IDX disclosures | primary terms | website terms not reviewed | UNCLEAR | UNCLEAR | No documented API | Free to read (not verified) | Low (pages 403/404/500) | T1 for terms |
+| Splits / bonus | EODHD | ratio documented (generic) | as above | UNCLEAR | UNCLEAR | Yes | All World | Medium | — |
+| Splits | Twelve Data | ratio/factors documented | as above | No | UNCLEAR | Yes | Grow+ | Medium | Bonus/stock dividend ND |
+| Security IDs | Twelve Data | FIGI (observed); ISIN add-on | as above | No | UNCLEAR | Yes | Add-on / Ultra | Medium | — |
+| Security IDs | EODHD | ISIN partial | as above | UNCLEAR | UNCLEAR | Yes | All World | Medium | — |
+| Ticker history | none documented for IDX | — | — | — | — | — | — | — | Gap |
+| Suspensions | none documented for IDX | — | — | — | — | — | — | — | Gap; IDX announcements (403) |
+| IHSG | Twelve Data | `JKSE` listed; depth not verified | as above | No | UNCLEAR | Yes | Pro | Medium | §27 |
+| IHSG | EODHD | not documented | as above | UNCLEAR | UNCLEAR | Yes | — | Low | §27 |
+| Trading rules | IDX decisions / OJK | see §26 | public documents | n/a (reference facts) | n/a | none | free | Mixed (§26) | Manual curation |
+
+## 30. Field-level matrix
+
+`TBD` means **no evidence-based choice exists yet**.
+
+| Field | Primary source | Fallback source | Required fields | Provenance required | Validation status |
+| --- | --- | --- | --- | --- | --- |
+| Daily OHLCV | TBD | TBD | OHLCV, date, currency, volume (unit) | Yes | NOT VALIDATED — no candidate with IDX-specific provenance and permitted permanent storage |
+| Cash dividends | TBD | TBD | gross amount, ex-date (+ record/payment date) | Yes | NOT VALIDATED — IDX coverage of fields not documented |
+| Rights | TBD | TBD | ratio, subscription price, cum/ex/recording/distribution dates, trading and exercise periods | Yes | NOT VALIDATED — no vendor documents fields; primary pages unreachable |
+| Splits/bonus | TBD | TBD | ratio, effective (ex) date | Yes | NOT VALIDATED — generic docs only |
+| Security ID | TBD | TBD | ISIN / vendor ID | Yes | NOT VALIDATED — ISIN partial or paid add-on |
+| Ticker history | TBD | TBD | old/new ticker, effective date | Yes | NOT AVAILABLE from any candidate's documentation |
+| Suspensions | TBD | TBD | status, start/end date | Yes | NOT AVAILABLE from any candidate's documentation |
+| Delisting | TBD | TBD | listing/delisting date | Yes | NOT VALIDATED — delisting-date field not documented |
+| IHSG | TBD | TBD | daily index history 2015+ | Yes | NOT VALIDATED (§27) |
+| Trading rules | TBD | TBD | lot/tick/session/limits by effective date | Yes | PARTIAL — lot size (2014) and T+2 verified; others secondary or unverified (§26) |
+
+---
+
+## 31. One provider or multiple providers
+
+**Evidence-based finding (not a selection):**
+
+* **No single candidate documents all mandatory fields for IDX.** Fields
+  documented by no vendor: rights-issue terms (ratio, subscription price,
+  dates), IDX ticker-change history, suspension status/dates, delisting dates,
+  and verified IHSG history. IDX trading rules come only from IDX/OJK
+  documents.
+* **Permanent storage (M1)** is prohibited after termination by Twelve Data and
+  FMP, and unclear for EODHD. For those providers, a subscription-dependent
+  store conflicts with the reproducibility requirement unless written terms
+  say otherwise.
+* **Therefore a multi-source architecture is necessary.** The minimum
+  combination, by category:
+  1. a licensed daily price + cash-dividend + split source for IDX;
+  2. primary-source corporate-action terms (issuer/KSEI/IDX disclosures) for
+     rights issues and verification of other actions;
+  3. primary-source listing, delisting, ticker-change, and suspension records
+     (IDX announcements);
+  4. an IHSG source with verified history and storage rights;
+  5. a curated, time-versioned IDX trading-rule reference dataset (§26).
+  A single licensed source may turn out to cover several of these; that
+  requires written confirmation (§33).
+
+**Licensing issues created by combining sources:**
+
+* Combination clauses (e.g. Twelve Data §2.3(k)) and derived-data clauses must
+  be checked for every pair.
+* Deletion-on-termination clauses make any combined or derived dataset that
+  contains that provider's data subject to deletion (FMP §6.2 explicitly covers
+  "derived" data).
+* Terms of reuse for IDX/KSEI website announcements have not been reviewed.
+* IHSG is IDX intellectual property; vendor rights to deliver it are
+  undocumented.
+
+---
+
+## 32. Implementation readiness gate
+
+Statuses: **READY** · **PARTIALLY READY** · **BLOCKED**. Readiness to *begin
+implementation*, not to trade or publish.
+
+| Item | Status | Missing evidence |
+| --- | --- | --- |
+| OHLCV | BLOCKED | A source with documented IDX raw OHLCV, verified 2015+ depth, documented volume unit, and permitted permanent storage; EODHD provenance contradiction resolved |
+| Delisted history | BLOCKED | Written confirmation that delisted IDX securities have full history, plus delisting dates |
+| Corporate actions | BLOCKED | IDX-specific field coverage (record/payment dates, bonus, reverse splits) from a selected source; primary-source verification path |
+| Dividends | BLOCKED | IDX dividend coverage including delisted securities; gross vs net confirmation |
+| Rights | BLOCKED | Any source of rights terms with fields; KSEI/IDX pages reachable or licensed; out-of-the-money treatment decided |
+| Security IDs | BLOCKED | A stable ID for all IDX securities including delisted (ISIN coverage for JK/XIDX) |
+| Ticker history | BLOCKED | Any documented source of IDX ticker changes with effective dates |
+| Suspensions | BLOCKED | Any documented source of suspension status and dates |
+| IHSG | BLOCKED | Verified 2015+ history and storage rights from any source |
+| Licensing | BLOCKED | Written confirmations for the UNCLEAR cells in §28.1 |
+| Permanent storage | BLOCKED | A source whose terms permit retention after termination |
+| Cloud storage | BLOCKED | Written confirmation for rented-server storage (not needed for local-only work) |
+| Automation | PARTIALLY READY | Limits and endpoints documented for EODHD, Twelve Data, and FMP; untested with IDX data; depends on selection |
+| Provenance | READY (design) | Requirements defined (§22); schema design is an implementation task |
+| Source disagreement handling | PARTIALLY READY | Procedure defined (§21, §23); per-field tolerances and tie-break orders need the reconciliation sample (M13) |
+| Trading rules | PARTIALLY READY | Official texts for tick sizes (2016+), price limits, sessions, and calendars 2015–2025 |
+
+**Overall: BLOCKED.** Phase 2 implementation should not start until at least
+OHLCV, licensing, permanent storage, and security IDs move out of BLOCKED.
+
+---
+
+## 33. Open questions
+
+**Project-level**
+1. Adopt or amend the precedence rule (§21); define per-field tolerances and
+   tie-break orders after the M13 sample.
+2. Rights: out-of-the-money treatment; theoretical vs explicit HMETD handling
+   in backtests (§25).
+3. Build the time-versioned IDX trading-rule dataset from official texts (§26),
+   including trading calendars 2015–2025.
+4. IHSG source with verified history and storage rights (§27).
+5. Budget (F1).
+
+**Written confirmations to request**
+* **IDX Data Services:** individual eligibility; EOD/historical, Data
+  Reference (corporate actions), and Index licence terms (storage, derived,
+  cloud, retention after termination); delisted coverage; suspension and
+  ticker-change data; delivery method; price.
+* **EODHD:** retention after termination; derived data; rented-server storage;
+  private display; whether JK prices are exchange-originated (Indonesia is not
+  named among direct contracts [56]); JK start date; delisted JK coverage and
+  delisting dates; JK record/payment-date coverage; rights issues; JK ISIN
+  coverage; `JKSE.INDX` availability and depth; which plan is needed for the
+  trading-hours/holiday API.
+* **Twelve Data:** retention of derived data after termination; the "permitted
+  timeframes" referenced in §2.3(g); history for the 180 delisted XIDX
+  identifiers; XIDX and JKSE depth; dividend record/payment dates; rights
+  issues; ISIN add-on cost; rented-server storage.
+* **FMP:** IDX coverage on Ultimate; `.JK` delisted and corporate-action
+  coverage; `^JKSE`; scope of the derivative-works clause.
+* **Sectors / Invezgo / GoAPI / OHLC.dev:** licence terms; raw OHLCV; delisted
+  coverage; history depth; whether they hold IDX redistribution licences.
+* **LSEG / Bloomberg / FactSet / S&P / ICE:** IDX coverage including delisted;
+  individual eligibility; price.
+* **KSEI / IDX websites:** terms for reuse of published corporate-action and
+  announcement data.
+
+## 34. Research dates
+
+* Round 1 (sections 10–19): **2026-09-24**.
+* Round 2 (sections 20–33): **2026-09-24**.
+
+Re-check every source's terms at selection time and record the version read.
+
+Retrieval notes:
+* idx.co.id, data.idx.co.id, and IDX test domains returned HTTP 403 to
+  automated requests; this was not bypassed.
+* KSEI pages returned HTTP 404/500 on 2026-09-24; the OJK site was reachable.
+* The S&P DJI methodology PDF returned HTTP 403.
+* sectors.app returned HTTP 429; FactSet pages rendered no body text.
+* Demo-key probes: Twelve Data `/stocks` and `/indices` returned data;
+  `earliest_timestamp` returned 401; EODHD returned "Forbidden".
 * Items marked **I** come from search-engine-indexed text that the search
   engine attributed to the cited URL; the page body itself was not read or did
   not contain the text. Treat **I** items as unverified until confirmed.
 
-## 22. Source links
+## 35. Source links
 
 | # | Source | URL |
 | --- | --- | --- |
@@ -490,3 +970,21 @@ Retrieval notes (2026-09-24):
 | 39 | Bloomberg — Reference data | https://professional.bloomberg.com/products/data/enterprise-catalog/reference/ |
 | 40 | FactSet — Global Prices API (body not retrievable) | https://developer.factset.com/api-catalog/factset-global-prices-api |
 | 41 | S&P Capital IQ Pro / Xpressfeed coverage | https://pages.marketintelligence.spglobal.com/SP-Capital-IQ-Pro-Data-Coverage.html |
+| 42 | OJK press release SP 80/DHMS/OJK/XI/2018 (T+2) | https://ojk.go.id/id/berita-dan-kegiatan/siaran-pers/Pages/Siaran-Pers-Penyelesaian-Transaksi-Bursa-Dua-Hari-T+2-Berjalan-Lancar.aspx |
+| 43 | IDX Kep-00071/BEI/11-2013 (lot size, tick size) — third-party-hosted copy | https://svc.star.id/docs/forms/general/SK%20Peraturan%20Nomor%20II-A%20Perubahan%20Satuan%20Perdagangan%20dan%20Fraksi%20Harga.pdf |
+| 44 | IDX Peraturan II-A, Kep-00055/BEI/03-2023 (HTTP 403) | https://www.idx.co.id/Media/y0vjxqur/signed_peraturan_ii_a_perdagangan_efek_bersifat_ekuitas.pdf |
+| 45 | Stockbit Snips — tick size table citing Kep-00023/BEI/04-2016 (secondary, 2022-02-02) | https://snips.stockbit.com/investasi/pengertian-fraksi-harga-saham |
+| 46 | Katadata Databoks — auto-rejection schedule 2023 (secondary, 2023-03-31) | https://databoks.katadata.co.id/datapublish/2023/03/31/ini-batas-auto-rejection-saham-terbaru-2023 |
+| 47 | Kontan — ARB 15% from 2025-04-08 (secondary) | https://momsmoney.kontan.co.id/news/bei-tetapkan-auto-rejection-bawah-arb-hanya-15-dan-mengubah-batas-trading-halt-8 |
+| 48 | IDX — Trading hours and mechanism (HTTP 403) | https://www.idx.co.id/en/products-services/trading-hours-and-mechanism/ |
+| 49 | IDX — 2026 exchange holiday calendar, Peng-00171/BEI.POP/09-2025 (HTTP 403) | https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/Exchange/Peng-00171%20Libur%20Bursa%202026-No.%20Peng-00171BEI.POP09-2025.pdf |
+| 50 | MSCI Index Calculation Methodology, August 2025 | https://www.msci.com/eqb/methodology/meth_docs/MSCI_Index_Calculation_Methodology_Aug2025.pdf |
+| 51 | S&P DJI Index Mathematics Methodology, April 2026 (HTTP 403; I) | https://www.spglobal.com/spdji/en/documents/methodologies/methodology-index-math.pdf |
+| 52 | POJK 32/POJK.04/2015 — HMETD (identified; not reviewed) | https://www.ojk.go.id/id/kanal/pasar-modal/regulasi/peraturan-ojk/Documents/Pages/pojk-32-penambahan-modal-pt-dengan-memberikan-hak-memesan-efek-terlebih-dahulu/SALINAN-POJK%20HMETD.pdf |
+| 53 | POJK 14/POJK.04/2019 — amendment (identified; not reviewed) | https://www.ojk.go.id/id/regulasi/Pages/Perubahan-Atas-Peraturan-Otoritas-Jasa-Keuangan-Nomor-32-tentang-Penambahan-Modal-Perusahaan-Terbuka-dengan-Me.aspx |
+| 54 | KSEI — example HMETD schedule announcement (HTTP 404 on 2026-09-24; I) | https://www.ksei.co.id/ksei_news/read/6857/Pengumuman-CA-Jadwal-Kegiatan-Penawaran-Umum-Terbatas-I-dalam-rangka-Penerbitan-Hak-Memesan-Efek-Terlebih-Dahulu-HMETD-PT-Broadband-Multimedia-Tbk-KBLV |
+| 55 | KSEI — corporate action service (HTTP 500 on 2026-09-24) | https://web.ksei.co.id/services/types/corporate-action |
+| 56 | EODHD — Our data sources and data partners | https://eodhd.com/financial-apis/our-data-sources-and-data-partners |
+| 57 | EODHD — Commercial pricing | https://eodhd.com/commercial-pricing |
+| 58 | Twelve Data — `earliest_timestamp` (JKSE) probe; demo key returned 401 | https://api.twelvedata.com/earliest_timestamp?symbol=JKSE&mic_code=XIDX&interval=1day |
+| 59 | EODHD — `eod/JKSE.INDX` probe; demo key returned "Forbidden" | https://eodhd.com/api/eod/JKSE.INDX |

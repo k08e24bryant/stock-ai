@@ -18,7 +18,7 @@ until its leakage and bias guards are tested**.
 | --- | --- | --- |
 | 0 | Project initialization | ✅ Complete |
 | 1 | Environment & services running | ✅ Complete |
-| 2 | Market data | ⬜ Not started — blocked on Q2 (requirements finalized and provider research recorded; no source selected) |
+| 2 | Market data | ⬜ Not started — blocked on Q2 (research and validation recorded; readiness gate BLOCKED; no source selected) |
 | 3 | Fundamental data | ⬜ Not started |
 | 4 | Valuation engine | ⬜ Not started |
 | 5 | Technical analysis | ⬜ Not started |
@@ -161,15 +161,36 @@ Requirements and provider evidence are recorded in
       Services, ICE, LSEG, Bloomberg, FactSet, S&P Global, EODHD, Twelve Data,
       Financial Modeling Prep, Yahoo Finance, Sectors, Invezgo, GoAPI, OHLC.dev.
       **No provider selected, ranked, or recommended.**
-* [ ] Resolve open questions with providers in writing — especially licence
-      retention after termination, rented-server storage, IDX delisted and
-      corporate-action coverage, and raw-price provenance (requirements doc §20).
-* [ ] Select source(s) — a separate, explicit decision.
-* [ ] Define and document the per-field source-precedence rule before ingestion.
-* [ ] Decide the rights-issue adjustment method and the total-return
-      reinvestment price convention.
+* [x] Provider validation, round 2 (2026-09-24) — **partially completed**:
+      licensing, coverage, corporate-action fields, market data, automation,
+      and cost validated per provider **from public documentation only**;
+      source matrix, field-level matrix, and readiness gate recorded
+      (requirements doc §28–§32). Nothing requiring a provider account or
+      written confirmation could be validated.
+* [x] Proposed (not yet adopted): per-field source-precedence rule (§21),
+      provenance requirements (§22), disagreement handling (§23),
+      total-return convention — reinvest gross dividends at the ex-date close,
+      a documented modelling assumption (§24), rights-issue methodology based
+      on the theoretical ex-rights price (§25).
+* [x] IDX trading-rule sources identified (§26). Verified: lot size 100 from
+      2014-01-06; T+2 settlement from 2018-11-26. Tick sizes from 2016 onward, price
+      limits, sessions, and calendars are secondary or unverified.
+* [ ] **Written provider confirmations** — the UNCLEAR licence cells, IDX
+      delisted/ticker/suspension coverage, EODHD price provenance, IHSG
+      history, and storage after termination (requirements doc §33).
+* [ ] **Source selection** — not made. A separate, explicit decision; no
+      provider has been selected, ranked, or recommended.
+* [ ] **Data contract** — not started: adopt the precedence rule, set
+      per-field tolerances and tie-break orders, and decide the rights
+      out-of-the-money and backtest treatment.
 * [ ] Sample accuracy audit of the selected source(s) against IDX primary
       disclosures (requirement M13).
+
+**Implementation readiness: BLOCKED** (requirements doc §32). OHLCV,
+delisted history, corporate actions, dividends, rights, security IDs, ticker
+history, suspensions, IHSG, licensing, permanent storage, and cloud storage
+are blocked. Automation, disagreement handling, and trading rules are
+partially ready; the provenance design is ready.
 
 ### Implementation (after Q2 is resolved)
 
@@ -310,7 +331,7 @@ real-money trading is explicitly **not** a goal of this roadmap.
 | # | Decision needed | Blocks | Notes |
 | --- | --- | --- | --- |
 | ~~Q1~~ | ~~Install Docker Desktop, or run PostgreSQL/Redis natively?~~ | — | **Resolved:** Docker Desktop installed; compose stack verified. |
-| Q2 | Market-data source for IDX OHLCV and corporate actions | Phase 2 | Requirements finalized and provider research recorded (2026-09-24) in `docs/data_sources/market_data_requirements.md`. Open: provider confirmations, selection, source-precedence rule. |
+| Q2 | Market-data source for IDX OHLCV and corporate actions | Phase 2 | Requirements, research, and validation recorded (2026-09-24) in `docs/data_sources/market_data_requirements.md`; readiness gate BLOCKED. Open: written provider confirmations, selection, data contract. |
 | Q3 | Fundamental-data source, including **publication timestamps** | Phase 3 | Statement dates alone are insufficient — without publication time, leakage is unavoidable. |
 | Q4 | News sources and their terms of use | Phase 6 | RSS/API only unless a source explicitly permits more. |
 | Q5 | Benchmark and sector index definitions (IHSG, sector indices) | Phase 8 | Needed for abnormal-return calculation. |

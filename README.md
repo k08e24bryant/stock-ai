@@ -10,9 +10,9 @@ and [PROJECT_PLAN.md](PROJECT_PLAN.md) for the roadmap.
 > **Status: Phase 1 (environment & services) complete. 43 tests pass (38 at the end of Phase 0).**
 > PostgreSQL 17 and Redis 7 run in Docker and are reachable from the app.
 > **Next: Phase 2 (market data). Not started; blocked on the data-source
-> decision (Q2).** Market-data requirements and provider research are recorded
-> in [docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md);
-> no source has been selected. No data ingestion, valuation, technical, ML,
+> decision (Q2).** Market-data requirements, provider research, and provider
+> validation are recorded in [docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md);
+> no source has been selected and the implementation readiness gate is BLOCKED. No data ingestion, valuation, technical, ML,
 > backtesting, or trading logic exists yet. Git state is recorded in [CONTEXT.md](CONTEXT.md).
 
 ---

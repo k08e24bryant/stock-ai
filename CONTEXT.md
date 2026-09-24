@@ -6,9 +6,11 @@ significant decision is made.
 **Last updated:** 2026-09-24
 **Current phase:** Phase 1 — Environment & services (complete).
 **Next phase:** Phase 2 — Market data. **Not started**; blocked on data-source
-decision Q2. Q2 requirements are finalized and provider research is recorded in
+decision Q2. Q2 requirements, provider research, and provider validation are
+recorded in
 [docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md);
-no source has been selected.
+no source has been selected, and the implementation readiness gate is
+**BLOCKED** (doc §32).
 
 ---
 
@@ -46,8 +48,8 @@ no technical indicator, no NLP, no ML, no backtester, and no dashboard.
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Commits on `origin/main` | `dff5641` Initial commit → `41f70b5` phase 1 completed → `237878c` docs: reconcile phase 0 and phase 1 documentation |
-| Local commits after `237878c` | Not pushed; list with `git log origin/main..HEAD` |
+| Commits on `origin/main` | `dff5641` Initial commit → `41f70b5` phase 1 completed → `237878c` docs: reconcile phase 0 and phase 1 documentation → `e6842ea` docs: finalize market data requirements |
+| Local commits after `e6842ea` | Not pushed; list with `git log origin/main..HEAD` |
 
 This snapshot goes stale on every commit or push — update it when either happens.
 
@@ -117,6 +119,11 @@ phase begins.
 | D15 | Store both price return and total return | Makes gross cash dividends a hard requirement. |
 | D16 | Multiple data sources allowed | Requires shared IDs, per-record provenance, logged disagreements, and a precedence rule defined before ingestion. |
 
+Proposed in the requirements doc but **not yet adopted**: the per-field
+source-precedence rule (§21), the total-return convention — gross dividends
+reinvested at the ex-date close, a modelling assumption matching MSCI's
+published method (§24) — and the rights-issue methodology (§25).
+
 ---
 
 ## 6. Deliberately NOT done
@@ -136,9 +143,11 @@ Tracked in detail in [PROJECT_PLAN.md](PROJECT_PLAN.md) → *Open decisions*.
 The blocking one is **data sourcing (Q2)**: no market-data, fundamental, or news
 provider has been chosen, and none may be added before its licence terms,
 redistribution rules, and rate limits are reviewed. For market data, the
-requirements and the provider evidence gathered on 2026-09-24 are in
-[docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md);
-provider confirmations and the selection itself are still open.
+requirements, provider evidence, and validation gathered on 2026-09-24 are in
+[docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md).
+Evidence shows no single candidate documents every mandatory field, so a
+multi-source setup is necessary (doc §31). Written provider confirmations,
+source selection, and the data contract are still open.
 
 CI (Q6) is also open but blocks nothing; tests, lint, and type checks run
 locally.
