@@ -4,7 +4,7 @@ Current state of the repository. Update this whenever a phase completes or a
 significant decision is made.
 
 **Last updated:** 2026-09-24
-**Current phase:** Phase 0 — Project Initialization (complete)
+**Current phase:** Phase 1 — Environment & services (complete). Next: Phase 2, gated on data-source decision Q2.
 
 ---
 
@@ -28,13 +28,13 @@ backtester, and no dashboard.
 
 | Area | State |
 | --- | --- |
-| Git repository | Initialized, branch `main`, no commits yet |
+| Git repository | Branch `main`, pushed to GitHub |
 | Python environment | `.venv` on Python 3.13.15 |
 | Package layout | All packages from CLAUDE.md §25 created, docstring only |
 | Configuration | `backend/config.py` — env-driven `Settings` (Pydantic) |
-| Database | Alembic scaffold; **zero migrations, zero tables** |
-| Infrastructure | `docker-compose.yml` for PostgreSQL 17 + Redis 7 (never run) |
-| Tests | 38 passing scaffold/config smoke tests |
+| Database | `backend/database.py` engine/session factory; Alembic connects; **zero migrations, zero tables** |
+| Infrastructure | PostgreSQL 17.11 + Redis 7.4.11 via Docker Compose, both healthy |
+| Tests | 43 passing (40 unit + 3 `integration` against live services) |
 | Frontend | `dashboard/` is an empty placeholder |
 
 ---
@@ -47,8 +47,8 @@ backtester, and no dashboard.
 | Python | 3.14.7 | present, deliberately unused |
 | pip | 26.2.1 | |
 | Git | 2.55.0.windows.3 | |
-| Docker | **not installed** | blocks running PostgreSQL/Redis |
-| Docker Compose | **not installed** | |
+| Docker | 29.8.0 | Docker Desktop |
+| Docker Compose | v5.5.1 | |
 | Node.js | 24.21.0 | at `C:\Program Files\nodejs`, **not on `PATH`** |
 | npm | 11.19.0 | same |
 
@@ -82,6 +82,9 @@ phase begins.
 | D6 | `backend/models` exports an empty `MetaData` | Gives autogenerate a stable target before any schema exists. |
 | D7 | `.env.example` contains **no** data-provider keys | No provider has been vetted for licence terms (CLAUDE.md Rules 7–8). |
 | D8 | `dashboard/` left empty | Phase 12. Scaffolding a frontend with nothing to render is pure maintenance cost. |
+| D9 | Integration tests skip (not fail) when services are down | Keeps the unit suite runnable without Docker; `-ra` reports every skip reason. |
+| D10 | Redis checked with a raw RESP `PING` over a socket | Avoids installing the `redis` client before the `[workers]` phase. |
+| D11 | 5 s database connect timeout | psycopg's 130 s default makes an unreachable database look like a hang. |
 
 ---
 

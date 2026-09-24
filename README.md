@@ -7,7 +7,7 @@ analysis into an **explainable** research assistant. It is explicitly *not* a
 black-box price predictor — see [CLAUDE.md](CLAUDE.md) for the full philosophy
 and [PROJECT_PLAN.md](PROJECT_PLAN.md) for the roadmap.
 
-> **Status: Phase 0 (project initialization) complete.**
+> **Status: Phase 1 (environment & services) complete.**
 > No data ingestion, valuation, technical, ML, backtesting, or trading logic
 > exists yet. The directory tree is scaffolding.
 
@@ -19,7 +19,7 @@ and [PROJECT_PLAN.md](PROJECT_PLAN.md) for the roadmap.
 | --- | --- | --- |
 | Python | 3.13.15 | 3.13.x |
 | Git | 2.55.0 | any recent |
-| Docker + Compose v2 | **not installed** | needed for PostgreSQL/Redis |
+| Docker + Compose v2 | 29.8.0 / v5.5.1 | needed for PostgreSQL/Redis |
 | Node.js / npm | 24.21.0 / 11.19.0 | only from Phase 12 (dashboard) |
 
 Python 3.14 is also present on this machine but is **not** used: parts of the
@@ -98,7 +98,13 @@ pytest -q              # quiet
 pytest -x -vv          # stop at first failure, verbose
 ```
 
-The Phase 0 suite requires no database and no network.
+Tests marked `integration` talk to the local PostgreSQL and Redis and are
+**skipped** (reason shown in the summary) when those services are down:
+
+```bash
+pytest -m integration        # only the live-service tests
+pytest -m "not integration"  # no database or network needed
+```
 
 ---
 
@@ -154,12 +160,9 @@ Every package currently contains only a docstring stating its responsibility.
 These block later phases and need a decision — see PROJECT_PLAN.md
 *Open decisions*.
 
-1. **Docker is not installed.** `docker-compose.yml` is written but has never
-   been started or validated. Install Docker Desktop for Windows, or supply a
-   native PostgreSQL/Redis instead.
-2. **Node.js is not on `PATH`.** It exists at `C:\Program Files\nodejs`
+1. **Node.js is not on `PATH`.** It exists at `C:\Program Files\nodejs`
    (v24.21.0) but is not resolvable from the shell. Only matters from Phase 12.
-3. **No data source has been selected.** No market-data, fundamental, or news
+2. **No data source has been selected.** No market-data, fundamental, or news
    provider is configured, and none may be added before its licence terms,
    redistribution rules, and rate limits are reviewed (CLAUDE.md Rules 7–8).
 

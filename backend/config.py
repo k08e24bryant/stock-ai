@@ -34,6 +34,7 @@ from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[1]
 
@@ -74,11 +75,20 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        """SQLAlchemy/psycopg connection URL for the primary database."""
-        return (
-            f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        )
+        """SQLAlchemy/psycopg connection URL for the primary database.
+
+        Built with :meth:`URL.create` so credentials containing URL-reserved
+        characters (``@``, ``/``, ``:``, ``%``...) are percent-encoded rather
+        than silently corrupting the host or database name.
+        """
+        return URL.create(
+            drivername="postgresql+psycopg",
+            username=self.postgres_user,
+            password=self.postgres_password,
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
+        ).render_as_string(hide_password=False)
 
     @property
     def redis_url(self) -> str:

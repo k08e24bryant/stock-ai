@@ -17,7 +17,7 @@ until its leakage and bias guards are tested**.
 | Phase | Name | Status |
 | --- | --- | --- |
 | 0 | Project initialization | ✅ Complete |
-| 1 | Environment & services running | 🚧 Blocked — Docker not installed |
+| 1 | Environment & services running | ✅ Complete (CI decision still open, Q6) |
 | 2 | Market data | ⬜ Not started — blocked on data-source decision |
 | 3 | Fundamental data | ⬜ Not started |
 | 4 | Valuation engine | ⬜ Not started |
@@ -92,19 +92,34 @@ app, no Celery app, no frontend, no CI.
 
 ---
 
-## Phase 1 — Environment and services 🚧
+## Phase 1 — Environment and services ✅
 
 **Goal:** the declared infrastructure actually runs and is reachable from the
-application.
+application. Verified 2026-09-24.
 
-* [ ] Install Docker Desktop (or provide native PostgreSQL 17 + Redis 7).
-* [ ] `docker compose config` validates.
-* [ ] `docker compose up -d` — both services report `healthy`.
-* [ ] Connectivity test from Python using `Settings.database_url` and `redis_url`.
-* [ ] `alembic upgrade head` succeeds against an empty database.
-* [ ] Decide whether to add CI (GitHub Actions running ruff + mypy + pytest).
+* [x] Install Docker Desktop — Docker 29.8.0, Compose v5.5.1.
+* [x] `docker compose config` validates.
+* [x] `docker compose up -d` — PostgreSQL 17.11 and Redis 7.4.11 report `healthy`.
+* [x] Connectivity test from Python using `Settings.database_url` and `redis_url`
+      (`tests/test_database.py`, marker `integration`; skipped with a reason
+      when the services are down).
+* [x] `alembic upgrade head` succeeds against an empty database; `alembic check`
+      reports no pending operations.
+* [ ] Decide whether to add CI (GitHub Actions running ruff + mypy + pytest) — Q6.
 
-**Blocker:** Docker is not installed on this machine.
+### Delivered
+
+* `backend/database.py` — cached engine (`pool_pre_ping`, 5 s connect timeout
+  instead of psycopg's 130 s default), session factory, `ping_database()`.
+  No models, no tables.
+* **Fix:** `Settings.database_url` now percent-encodes credentials via
+  `sqlalchemy.engine.URL.create`. Previously a password containing `@`, `/`,
+  or `:` silently corrupted the host and database name.
+* **Fix:** `database/migrations/env.py` escapes `%` before handing the URL to
+  Alembic's configparser, which otherwise rejects any percent-encoded password.
+* `integration` pytest marker registered in `pyproject.toml`.
+* Suite: **43 passed** with services up; with services down the 3 integration
+  tests skip and the rest pass.
 
 ---
 
@@ -248,7 +263,7 @@ real-money trading is explicitly **not** a goal of this roadmap.
 
 | # | Decision needed | Blocks | Notes |
 | --- | --- | --- | --- |
-| Q1 | Install Docker Desktop, or run PostgreSQL/Redis natively? | Phase 1 | `docker-compose.yml` is written but unvalidated. |
+| ~~Q1~~ | ~~Install Docker Desktop, or run PostgreSQL/Redis natively?~~ | — | **Resolved:** Docker Desktop installed; compose stack verified. |
 | Q2 | Market-data source for IDX OHLCV and corporate actions | Phase 2 | Must be assessed for licence, redistribution rights, rate limits, and history depth before any code is written. |
 | Q3 | Fundamental-data source, including **publication timestamps** | Phase 3 | Statement dates alone are insufficient — without publication time, leakage is unavoidable. |
 | Q4 | News sources and their terms of use | Phase 6 | RSS/API only unless a source explicitly permits more. |

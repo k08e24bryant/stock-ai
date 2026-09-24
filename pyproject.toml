@@ -69,6 +69,9 @@ packages = [
 minversion = "8.0"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "integration: needs the local PostgreSQL/Redis services (docker compose up -d); skipped when they are unreachable",
+]
 
 [tool.ruff]
 line-length = 100
