@@ -1231,3 +1231,29 @@ traded / no trades / suspended / unknown. **No provider is implemented.**
 | DS-18 | https://zenodo.org/records/17626537 |
 | DS-19 | https://www.kaggle.com/datasets/eren2222/complete-indonesia-stock-exchange-idx-2000-2024 · https://www.kaggle.com/datasets/eren2222/indonesia-stock-exchange-idx-historical-price · https://www.kaggle.com/datasets/muamkh/ihsgstockdata · https://www.kaggle.com/datasets/bestagi/indonesia-stock-marketidx-price-data · https://www.kaggle.com/datasets/garethharrison/daily-ihsg |
 | DS-20 | https://github.com/NeaByteLab/IDX-API · https://github.com/basnugroho/indonesia-stocks-scraper · https://github.com/kubil-ismail/indonesia-stock-exchange · https://github.com/alukito/idx-data |
+
+### 36.11 Phase 2A implementation findings (DS-4, revision `9bb3b26`, 2026-09-24)
+
+Verified from the files themselves, before and during implementation of
+`data/ingestion/pholenk.py`. These refine §36.4–§36.5; no earlier measurement
+was contradicted (the provider's report reproduces 1,289,820 rows, 983
+securities, 2020-01-02 → 2026-05-29, 0 duplicates, 1,045,981 missing opens,
+156,317 zero-volume rows, 0 invalid OHLC, 0 negative volume).
+
+* **Structure:** 983 files `dataset/stocks/csv/<KEY>.csv`, one identical
+  26-column header, UTF-8 with BOM, rows **newest first**, dates always
+  `YYYY-MM-DD`, prices as decimals, volume and value as integers. KEY is 4
+  characters except `GOTOM`, `MAMIP`, `MYRXP`.
+* **Exactly three row patterns:** traded with `Open = 0` (889,664); traded
+  with open present (243,839); `Volume = 0`, `High = Low = Open = 0`, `Close =
+  Previous` (156,317). No mixed patterns occur.
+* **Close on zero-volume rows repeats the previous close.** It is a carried
+  reference price, not a trade; `trading_status` marks these rows.
+* **Source defect:** `TRUE.csv` has `Ticker = "True"` in all 1,188 rows (the
+  ticker was coerced to a boolean string upstream). The provider uses the file
+  key and logs the mismatch; any other ticker mismatch is rejected.
+* **Name changes:** 78 files contain more than one company name; the newest
+  row's name is used for `Security.name`.
+* **`Remarks`** is a 30- or 8-character code string. Its encoding is not
+  documented; it is kept in the raw layer and **not interpreted** (it was not
+  found to separate suspension from no trading).

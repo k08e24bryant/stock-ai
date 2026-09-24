@@ -4,14 +4,14 @@ Current state of the repository. Update this whenever a phase completes or a
 significant decision is made.
 
 **Last updated:** 2026-09-24
-**Current phase:** Phase 1 — Environment & services (complete).
-**Next phase:** Phase 2 — Market data. **Not started.**
+**Current phase:** Phase 2 — Market data, **in progress**. Phase 2A (Pholenk
+development ingestion) is complete; persistence is next.
 **Mode:** **$0 development mode** (2026-09-24). Production data is **BLOCKED**
 on Q2 (no production provider selected; production licensing unresolved;
 doc §32). Development data is **UNBLOCKED**: public development sources are
 selected in
 [docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md)
-§36. Implementation may start on development data, through the
+§36. Implementation proceeds on development data, through the
 provider-neutral interface only.
 
 ---
@@ -30,19 +30,20 @@ file wherever they disagree.
 
 ## 2. What exists right now
 
-Infrastructure and scaffolding only. **No analytical code has been written and
-no Phase 2 work has started.** There is no data ingestion, no valuation model,
-no technical indicator, no NLP, no ML, no backtester, and no dashboard.
+Infrastructure plus a file-based development market-data provider. **No
+analytical code has been written.** There is no persistence of market data, no
+valuation model, no technical indicator, no NLP, no ML, no backtester, and no
+dashboard.
 
 | Area | State |
 | --- | --- |
 | Git repository | Branch `main`; see *Git state* below |
 | Python environment | `.venv` on Python 3.13.15 |
-| Package layout | All packages from CLAUDE.md §25 created. Implementation code: `backend/config.py`, `backend/database.py`, and the provider-neutral market-data interface `data/ingestion/provider.py` (interface only, no providers). Every other package is a docstring-only placeholder |
+| Package layout | All packages from CLAUDE.md §25 created. Implementation code: `backend/config.py`, `backend/database.py`, the provider-neutral interface `data/ingestion/provider.py`, the Pholenk development provider `data/ingestion/pholenk.py`, and daily-price validation/reporting `data/validation/daily_prices.py`. Every other package is a docstring-only placeholder |
 | Configuration | `backend/config.py` — env-driven `Settings` (Pydantic) |
 | Database | `backend/database.py` engine/session factory; Alembic connects; **zero migrations, zero tables** |
 | Infrastructure | PostgreSQL 17.11 + Redis 7.4.11 via Docker Compose, both healthy |
-| Tests | 48 passing (45 unit + 3 `integration` against live services). Phase 0 ended with 38; Phase 1 with 43. |
+| Tests | 81 passing (78 unit + 3 `integration` against live services). Phase 0 ended with 38; Phase 1 with 43. |
 | Frontend | `dashboard/` is an empty placeholder |
 
 ### Git state (snapshot, 2026-09-24)
@@ -123,6 +124,9 @@ phase begins.
 | D17 | $0 development mode: build on public development data now; production provider selection deferred | Production requirements stay unchanged; development sources (doc §36) are not declared to satisfy them. |
 | D18 | Provider-agnostic architecture: all market data goes through `MarketDataProvider` with provenance on every record | Lets a production source replace development sources without downstream changes. |
 | D19 | Core development OHLCV source: Pholenk/IDX-Dataset (ODbL; 2020-01-02 → 2026-05-29), with supplemental sources in doc §36.7 | Only full-universe raw IDX-format source found with an explicit open-data licence. Development only. |
+| D20 | Source `Open = 0` → `open = None`; zero-volume rows with `High = Low = 0` → `NO_TRADE_OR_SUSPENDED` (kept, never dropped) | The source supplies no open on most rows and does not distinguish suspension from no trading; nothing is fabricated. |
+| D21 | Development identity `dev:pholenk-idx-dataset:<KEY>` | No stable ID in the source; explicitly not an ISIN and not stable across ticker changes. |
+| D22 | Phase 2A adds no database tables | Canonical records are produced in memory; persistence is the next, separate step. |
 
 Proposed in the requirements doc but **not yet adopted**: the per-field
 source-precedence rule (§21), the total-return convention — gross dividends
@@ -134,7 +138,7 @@ published method (§24) — and the rights-issue methodology (§25).
 ## 6. Deliberately NOT done
 
 * No database schema. Table design begins in Phase 2, group by group.
-* No data source integration, no API client, no scraper.
+* No network data client and no scraper; the only provider reads a local, git-ignored file snapshot.
 * No ML, no NLP models, no feature engineering.
 * No FastAPI application object or routes.
 * No Celery app or worker tasks.

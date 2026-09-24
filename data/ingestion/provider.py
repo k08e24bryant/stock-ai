@@ -65,11 +65,18 @@ class PriceBasis(StrEnum):
 
 
 class TradingStatus(StrEnum):
-    """Security-day status (requirement M7)."""
+    """Security-day status (requirement M7).
+
+    Use the most specific status the source actually supports.
+    `NO_TRADE_OR_SUSPENDED` exists because many sources show a zero-volume day
+    without saying whether the security was suspended or simply not traded;
+    that uncertainty must be preserved rather than guessed.
+    """
 
     TRADED = "traded"
     NO_TRADES = "no_trades"
     SUSPENDED = "suspended"
+    NO_TRADE_OR_SUSPENDED = "no_trade_or_suspended"
     UNKNOWN = "unknown"
 
 
@@ -119,9 +126,15 @@ class Security:
 
 @dataclass(frozen=True, slots=True)
 class DailyPrice:
-    """One security-day of market data. `open` may be unknown in some sources."""
+    """One security-day of market data. `open` may be unknown in some sources.
+
+    `close` is the source's closing (or reference) price. On a day without
+    trades a source may repeat the previous close; `trading_status` tells the
+    caller whether `close` reflects trading on that day.
+    """
 
     source_security_id: str
+    ticker: str
     trade_date: date
     close: Decimal
     price_basis: PriceBasis
@@ -135,6 +148,11 @@ class DailyPrice:
     volume_shares: int | None = None
     value: Decimal | None = None
     frequency: int | None = None
+
+    @property
+    def is_adjusted(self) -> bool:
+        """True when the source adjusted the prices (never the case for raw data)."""
+        return self.price_basis is PriceBasis.ADJUSTED
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +199,14 @@ class IndexLevel:
     low: Decimal | None = None
 
 
+class NotProvidedError(NotImplementedError):
+    """Raised when a source does not supply a data type.
+
+    Returning an empty result instead would wrongly suggest that, for example,
+    a security paid no dividends.
+    """
+
+
 @runtime_checkable
 class MarketDataProvider(Protocol):
     """Minimal read-only contract for any market-data source."""
@@ -217,6 +243,7 @@ __all__ = [
     "Dividend",
     "IndexLevel",
     "MarketDataProvider",
+    "NotProvidedError",
     "PriceBasis",
     "Provenance",
     "RevisionStatus",

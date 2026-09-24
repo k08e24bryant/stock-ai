@@ -23,7 +23,9 @@ from backend.models import metadata
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep application loggers alive when migrations run in-process (e.g. tests):
+    # the default would disable every logger created before this call.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Alembic's Config is backed by configparser, which treats "%" as interpolation
 # syntax. A correctly percent-encoded password (e.g. "%40" for "@") would

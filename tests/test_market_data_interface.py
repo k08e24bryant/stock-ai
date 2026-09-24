@@ -61,6 +61,7 @@ def test_object_missing_methods_does_not_satisfy_protocol() -> None:
 def test_records_are_immutable_and_carry_provenance() -> None:
     price = p.DailyPrice(
         source_security_id="BBCA",
+        ticker="BBCA",
         trade_date=date(2026, 5, 29),
         close=Decimal("5700"),
         price_basis=p.PriceBasis.RAW,
@@ -68,6 +69,7 @@ def test_records_are_immutable_and_carry_provenance() -> None:
         provenance=_provenance(),
     )
     assert price.open is None  # some public sources do not supply opens
+    assert price.is_adjusted is False
     assert price.currency == "IDR"
     with pytest.raises(dataclasses.FrozenInstanceError):
         price.close = Decimal("1")  # type: ignore[misc]
@@ -79,8 +81,8 @@ def test_every_record_type_requires_provenance() -> None:
         assert field.default is dataclasses.MISSING
 
 
-def test_no_concrete_provider_is_implemented_yet() -> None:
-    """Phase 2 implementation has not started; only the interface exists."""
+def test_interface_module_defines_no_concrete_provider() -> None:
+    """Concrete providers live in their own modules (e.g. data/ingestion/pholenk.py)."""
     implementations = [
         obj
         for obj in vars(p).values()

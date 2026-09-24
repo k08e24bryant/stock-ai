@@ -18,7 +18,7 @@ until its leakage and bias guards are tested**.
 | --- | --- | --- |
 | 0 | Project initialization | ✅ Complete |
 | 1 | Environment & services running | ✅ Complete |
-| 2 | Market data | ⬜ Not started — production data **BLOCKED** (Q2); development data **UNBLOCKED**; implementation **READY TO START USING DEVELOPMENT DATA** |
+| 2 | Market data | 🚧 In progress — Phase 2A (Pholenk development ingestion) ✅ complete; production data **BLOCKED** (Q2); development data **UNBLOCKED** |
 | 3 | Fundamental data | ⬜ Not started |
 | 4 | Valuation engine | ⬜ Not started |
 | 5 | Technical analysis | ⬜ Not started |
@@ -139,19 +139,18 @@ does not block Phase 2, and checks run locally in the meantime.
 
 ---
 
-## Phase 2 — Market data ⬜
+## Phase 2 — Market data 🚧
 
 **Goal:** a reproducible, corporate-action-correct daily OHLCV history.
 
-**Implementation has not started.** No ingestion code, API client, table, or
-migration exists for Phase 2. Only the provider-neutral interface
-(`data/ingestion/provider.py`) has been defined.
+Phase 2A (development ingestion from Pholenk/IDX-Dataset) is complete. No
+database table, migration, network client, or scheduled job exists yet.
 
 | Track | Status |
 | --- | --- |
 | Production data | **BLOCKED** — Q2 unresolved; readiness gate in requirements doc §32 |
 | Development data | **UNBLOCKED** — $0 development mode; public sources selected (requirements doc §36) |
-| Implementation | **READY TO START USING DEVELOPMENT DATA** — through the provider-neutral interface only |
+| Implementation | **IN PROGRESS** — Phase 2A complete on development data, through the provider-neutral interface only |
 
 Production provider selection remains a later, separate gate. Development
 data does not satisfy production requirements and must not be treated as if
@@ -216,13 +215,54 @@ partially ready; the provenance design is ready.
       metadata (Dataset-Saham-IDX list, kjhq CC0).
 * [x] Minimal provider-neutral interface `MarketDataProvider` with provenance
       on every record (`data/ingestion/provider.py`); no provider implemented.
-* [ ] Next implementation step: a development provider for the core source,
-      raw-file storage with provenance, then the tables below.
+* [x] Development provider for the core source — Phase 2A below.
+* [ ] Next: persistence (raw layer + canonical daily prices) and the tables
+      below, still on development data.
 
 Known development-data gaps: raw IDX-format history starts 2019-07/2020-01
 (not 2015); opens are mostly missing before 2025; no ticker history, ISINs,
 suspension dates, or rights terms; a 9-date close disagreement in 2024 between
 the two IDX-format sources (requirements doc §36.5).
+
+### Phase 2A — Pholenk development ingestion — STATUS: COMPLETE (2026-09-24)
+
+`Pholenk raw files → parser → normalization → validation → canonical records`
+
+* [x] Snapshot inspected before coding (revision `9bb3b26`, 983 files, one
+      header, UTF-8 BOM, newest date first, `YYYY-MM-DD` dates, integer share
+      volume). Stored git-ignored at `data/raw/pholenk/IDX-Dataset-9bb3b26/`
+      with `manifest.json` (URL, revision, archive SHA-256, retrieval time).
+* [x] `PholenkProvider` implements `MarketDataProvider`
+      (`data/ingestion/pholenk.py`): `list_securities`, `get_daily_prices`;
+      dividends, corporate actions, and index history raise
+      `NotProvidedError`.
+* [x] Raw layer kept separate: `PholenkRawRow` holds untouched source
+      strings; source files are never modified.
+* [x] Normalization: `Open = 0` → `open = None` (never replaced by another
+      price); zero-volume rows with `High = Low = 0` →
+      `NO_TRADE_OR_SUSPENDED` (suspension is not distinguishable), kept, with
+      high/low `None`; prices raw (`is_adjusted = False`); no adjustments.
+* [x] Validation (`data/validation/daily_prices.py`): hard-invalid vs
+      expected source condition; hard-invalid records make
+      `get_daily_prices` fail loudly.
+* [x] Duplicates on (security, date): exact duplicates collapse to the
+      lowest source line (logged); conflicting duplicates raise.
+* [x] Development-only identity `dev:pholenk-idx-dataset:<KEY>` — not an
+      ISIN; does not survive ticker changes.
+* [x] Provenance on every record: source, retrieval time, file path + file
+      SHA-256 + line, licence, parser version, source revision, run ID.
+* [x] Quality report computed from input:
+      `python -m data.ingestion.pholenk data/raw/pholenk/IDX-Dataset-9bb3b26`.
+      On the snapshot: 1,289,820 rows; 983 securities; 2020-01-02 →
+      2026-05-29; 0 duplicates; 1,045,981 missing opens (81.10%); 156,317
+      zero-volume rows; 0 invalid OHLC; 0 negative volume. The strict path
+      returns all 1,289,820 rows.
+* [x] No database changes: canonical records are in-memory; persistence is
+      the next step. `alembic check` reports no pending operations.
+
+Not done in Phase 2A (by design): other datasets, cross-source
+reconciliation, corporate-action/dividend handling, price adjustment,
+persistence, scheduling.
 
 ### Implementation (tables and jobs — start on development data; production source later)
 

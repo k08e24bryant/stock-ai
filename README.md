@@ -7,15 +7,14 @@ analysis into an **explainable** research assistant. It is explicitly *not* a
 black-box price predictor — see [CLAUDE.md](CLAUDE.md) for the full philosophy
 and [PROJECT_PLAN.md](PROJECT_PLAN.md) for the roadmap.
 
-> **Status: Phase 1 (environment & services) complete. 48 tests pass (38 at the end of Phase 0, 43 at the end of Phase 1).**
+> **Status: Phase 2A (Pholenk development ingestion) complete. 81 tests pass (38 at the end of Phase 0, 43 at the end of Phase 1).**
 > PostgreSQL 17 and Redis 7 run in Docker and are reachable from the app.
-> **Next: Phase 2 (market data). Not started.** $0 development mode:
-> production data is BLOCKED (no production provider selected), development
-> data is UNBLOCKED, and implementation is ready to start using public
-> development sources. Requirements, provider research, validation, and the
+> **Phase 2 (market data) in progress.** $0 development mode: production
+> data is BLOCKED (no production provider selected); development data is
+> UNBLOCKED and read through the provider-neutral interface. Requirements, provider research, validation, and the
 > development source map are in [docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md).
-> No data ingestion, valuation, technical, ML, backtesting, or trading logic
-> exists yet. Git state is recorded in [CONTEXT.md](CONTEXT.md).
+> No market-data persistence, valuation, technical, ML, backtesting, or
+> trading logic exists yet. Git state is recorded in [CONTEXT.md](CONTEXT.md).
 
 ---
 
@@ -160,9 +159,30 @@ tests/          pytest suite
 
 Implementation code so far: `backend/config.py` (environment-driven
 settings), `backend/database.py` (engine, session factory, connectivity
-check), and `data/ingestion/provider.py` (provider-neutral market-data
-interface — no providers implemented). Every other package contains only a
+check), `data/ingestion/provider.py` (provider-neutral market-data
+interface), `data/ingestion/pholenk.py` (development provider for the
+Pholenk/IDX-Dataset snapshot), and `data/validation/daily_prices.py`
+(validation and quality report). Every other package contains only a
 docstring stating its responsibility.
+
+### Development market data (Pholenk snapshot)
+
+The development provider reads a local snapshot that is **not** committed
+(`data/raw/` is git-ignored). Expected layout:
+
+```text
+data/raw/pholenk/IDX-Dataset-<short-revision>/
+├── manifest.json            # source_id, revision, archive_sha256, retrieved_at
+└── dataset/stocks/csv/*.csv # from https://github.com/Pholenk/IDX-Dataset
+```
+
+Quality report for a snapshot:
+
+```bash
+python -m data.ingestion.pholenk data/raw/pholenk/IDX-Dataset-9bb3b26
+```
+
+Development data only; see `docs/data_sources/market_data_requirements.md` §36.
 
 ---
 
