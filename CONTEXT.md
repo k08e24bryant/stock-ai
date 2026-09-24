@@ -5,12 +5,14 @@ significant decision is made.
 
 **Last updated:** 2026-09-24
 **Current phase:** Phase 1 — Environment & services (complete).
-**Next phase:** Phase 2 — Market data. **Not started**; blocked on data-source
-decision Q2. Q2 requirements, provider research, and provider validation are
-recorded in
-[docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md);
-no source has been selected, and the implementation readiness gate is
-**BLOCKED** (doc §32).
+**Next phase:** Phase 2 — Market data. **Not started.**
+**Mode:** **$0 development mode** (2026-09-24). Production data is **BLOCKED**
+on Q2 (no production provider selected; production licensing unresolved;
+doc §32). Development data is **UNBLOCKED**: public development sources are
+selected in
+[docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md)
+§36. Implementation may start on development data, through the
+provider-neutral interface only.
 
 ---
 
@@ -36,11 +38,11 @@ no technical indicator, no NLP, no ML, no backtester, and no dashboard.
 | --- | --- |
 | Git repository | Branch `main`; see *Git state* below |
 | Python environment | `.venv` on Python 3.13.15 |
-| Package layout | All packages from CLAUDE.md §25 created. Only `backend/` holds implementation code (`config.py`, `database.py`); every other package is still a docstring-only placeholder |
+| Package layout | All packages from CLAUDE.md §25 created. Implementation code: `backend/config.py`, `backend/database.py`, and the provider-neutral market-data interface `data/ingestion/provider.py` (interface only, no providers). Every other package is a docstring-only placeholder |
 | Configuration | `backend/config.py` — env-driven `Settings` (Pydantic) |
 | Database | `backend/database.py` engine/session factory; Alembic connects; **zero migrations, zero tables** |
 | Infrastructure | PostgreSQL 17.11 + Redis 7.4.11 via Docker Compose, both healthy |
-| Tests | 43 passing (40 unit + 3 `integration` against live services). Phase 0 ended with 38. |
+| Tests | 48 passing (45 unit + 3 `integration` against live services). Phase 0 ended with 38; Phase 1 with 43. |
 | Frontend | `dashboard/` is an empty placeholder |
 
 ### Git state (snapshot, 2026-09-24)
@@ -48,8 +50,8 @@ no technical indicator, no NLP, no ML, no backtester, and no dashboard.
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Commits on `origin/main` | `dff5641` Initial commit → `41f70b5` phase 1 completed → `237878c` docs: reconcile phase 0 and phase 1 documentation → `e6842ea` docs: finalize market data requirements |
-| Local commits after `e6842ea` | Not pushed; list with `git log origin/main..HEAD` |
+| Commits on `origin/main` | `dff5641` Initial commit → `41f70b5` phase 1 completed → `237878c` docs: reconcile phase 0 and phase 1 documentation → `e6842ea` docs: finalize market data requirements → `a2beb24` docs: validate market data sources |
+| Local commits after `a2beb24` | Not pushed; list with `git log origin/main..HEAD` |
 
 This snapshot goes stale on every commit or push — update it when either happens.
 
@@ -118,6 +120,9 @@ phase begins.
 | D14 | Minimum history 2015-01-01 (≈ 2005 SHOULD) | Covers the §14 validation example plus indicator warm-up. |
 | D15 | Store both price return and total return | Makes gross cash dividends a hard requirement. |
 | D16 | Multiple data sources allowed | Requires shared IDs, per-record provenance, logged disagreements, and a precedence rule defined before ingestion. |
+| D17 | $0 development mode: build on public development data now; production provider selection deferred | Production requirements stay unchanged; development sources (doc §36) are not declared to satisfy them. |
+| D18 | Provider-agnostic architecture: all market data goes through `MarketDataProvider` with provenance on every record | Lets a production source replace development sources without downstream changes. |
+| D19 | Core development OHLCV source: Pholenk/IDX-Dataset (ODbL; 2020-01-02 → 2026-05-29), with supplemental sources in doc §36.7 | Only full-universe raw IDX-format source found with an explicit open-data licence. Development only. |
 
 Proposed in the requirements doc but **not yet adopted**: the per-field
 source-precedence rule (§21), the total-return convention — gross dividends

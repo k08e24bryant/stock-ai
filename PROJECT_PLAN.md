@@ -18,7 +18,7 @@ until its leakage and bias guards are tested**.
 | --- | --- | --- |
 | 0 | Project initialization | ✅ Complete |
 | 1 | Environment & services running | ✅ Complete |
-| 2 | Market data | ⬜ Not started — blocked on Q2 (research and validation recorded; readiness gate BLOCKED; no source selected) |
+| 2 | Market data | ⬜ Not started — production data **BLOCKED** (Q2); development data **UNBLOCKED**; implementation **READY TO START USING DEVELOPMENT DATA** |
 | 3 | Fundamental data | ⬜ Not started |
 | 4 | Valuation engine | ⬜ Not started |
 | 5 | Technical analysis | ⬜ Not started |
@@ -144,7 +144,18 @@ does not block Phase 2, and checks run locally in the meantime.
 **Goal:** a reproducible, corporate-action-correct daily OHLCV history.
 
 **Implementation has not started.** No ingestion code, API client, table, or
-migration exists for Phase 2.
+migration exists for Phase 2. Only the provider-neutral interface
+(`data/ingestion/provider.py`) has been defined.
+
+| Track | Status |
+| --- | --- |
+| Production data | **BLOCKED** — Q2 unresolved; readiness gate in requirements doc §32 |
+| Development data | **UNBLOCKED** — $0 development mode; public sources selected (requirements doc §36) |
+| Implementation | **READY TO START USING DEVELOPMENT DATA** — through the provider-neutral interface only |
+
+Production provider selection remains a later, separate gate. Development
+data does not satisfy production requirements and must not be treated as if
+it did.
 
 ### Q2 — market-data source (blocking)
 
@@ -186,13 +197,34 @@ Requirements and provider evidence are recorded in
 * [ ] Sample accuracy audit of the selected source(s) against IDX primary
       disclosures (requirement M13).
 
-**Implementation readiness: BLOCKED** (requirements doc §32). OHLCV,
+**Production readiness: BLOCKED** (requirements doc §32). OHLCV,
 delisted history, corporate actions, dividends, rights, security IDs, ticker
 history, suspensions, IHSG, licensing, permanent storage, and cloud storage
 are blocked. Automation, disagreement handling, and trading rules are
 partially ready; the provenance design is ready.
 
-### Implementation (after Q2 is resolved)
+### $0 development mode (decided 2026-09-24)
+
+* [x] Public development sources searched, downloaded, and measured;
+      development source map recorded (requirements doc §36).
+* [x] Core development OHLCV source: Pholenk/IDX-Dataset (ODbL; raw
+      IDX-format; 983 tickers; 2020-01-02 → 2026-05-29).
+* [x] Supplemental development sources: Dataset-Saham-IDX and its fork
+      (cross-check), faisalburhanudin/idx (2000–2019, Yahoo split-adjusted),
+      IHSG (`COMPOSITE` + daily-IHSG), dividends (indonesia-stock-dividends),
+      corporate-action events and company profiles (nichsedge/idx-bei),
+      metadata (Dataset-Saham-IDX list, kjhq CC0).
+* [x] Minimal provider-neutral interface `MarketDataProvider` with provenance
+      on every record (`data/ingestion/provider.py`); no provider implemented.
+* [ ] Next implementation step: a development provider for the core source,
+      raw-file storage with provenance, then the tables below.
+
+Known development-data gaps: raw IDX-format history starts 2019-07/2020-01
+(not 2015); opens are mostly missing before 2025; no ticker history, ISINs,
+suspension dates, or rights terms; a 9-date close disagreement in 2024 between
+the two IDX-format sources (requirements doc §36.5).
+
+### Implementation (tables and jobs — start on development data; production source later)
 
 * [ ] `companies` table: identifiers, listing and delisting dates, ticker
       history, sector classification.
@@ -331,7 +363,7 @@ real-money trading is explicitly **not** a goal of this roadmap.
 | # | Decision needed | Blocks | Notes |
 | --- | --- | --- | --- |
 | ~~Q1~~ | ~~Install Docker Desktop, or run PostgreSQL/Redis natively?~~ | — | **Resolved:** Docker Desktop installed; compose stack verified. |
-| Q2 | Market-data source for IDX OHLCV and corporate actions | Phase 2 | Requirements, research, and validation recorded (2026-09-24) in `docs/data_sources/market_data_requirements.md`; readiness gate BLOCKED. Open: written provider confirmations, selection, data contract. |
+| Q2 | Production market-data source for IDX OHLCV and corporate actions | Phase 2 production data | Requirements, research, and validation recorded (2026-09-24) in `docs/data_sources/market_data_requirements.md`; production gate BLOCKED. Development proceeds on public sources ($0 mode, doc §36). Open: written provider confirmations, selection, data contract. |
 | Q3 | Fundamental-data source, including **publication timestamps** | Phase 3 | Statement dates alone are insufficient — without publication time, leakage is unavoidable. |
 | Q4 | News sources and their terms of use | Phase 6 | RSS/API only unless a source explicitly permits more. |
 | Q5 | Benchmark and sector index definitions (IHSG, sector indices) | Phase 8 | Needed for abnormal-return calculation. |

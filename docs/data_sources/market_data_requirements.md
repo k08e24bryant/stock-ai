@@ -1,8 +1,10 @@
 # Market-Data Source Requirements and Provider Research (Q2)
 
 **Status:** Requirements finalized; provider research (round 1) and validation
-(round 2) recorded. **No provider has been selected.** Implementation readiness:
-**BLOCKED** (§32). Phase 2 implementation has **not** started.
+(round 2) recorded. **No production provider has been selected.** Production
+readiness: **BLOCKED** (§32). **$0 development mode** (2026-09-24): public
+development data sources are recorded in §36; they do not satisfy production
+requirements. Phase 2 implementation has **not** started.
 **Research date:** all sources below were checked on **2026-09-24** unless stated.
 **Governs:** PROJECT_PLAN.md → Phase 2 and open decision Q2.
 
@@ -988,3 +990,244 @@ Retrieval notes:
 | 57 | EODHD — Commercial pricing | https://eodhd.com/commercial-pricing |
 | 58 | Twelve Data — `earliest_timestamp` (JKSE) probe; demo key returned 401 | https://api.twelvedata.com/earliest_timestamp?symbol=JKSE&mic_code=XIDX&interval=1day |
 | 59 | EODHD — `eod/JKSE.INDX` probe; demo key returned "Forbidden" | https://eodhd.com/api/eod/JKSE.INDX |
+
+---
+
+## 36. Development Data Sources ($0 development mode)
+
+**These sources are development data sources and are not declared to satisfy
+production licensing requirements.**
+
+Decision (project owner, 2026-09-24): proceed in **$0 development mode**. Build
+the pipeline, database, features, technical analysis, event studies, ML, and
+backtesting framework on publicly accessible data now. The production
+requirements in sections 1–35 are **unchanged**; production source selection
+remains a later gate (§32). All development code must go through the
+provider-neutral interface (§36.9) so that a production source can replace
+development sources without changing downstream code.
+
+Research and inspection date: **2026-09-24**. Downloads were stored outside the
+repository (session scratch space); **no third-party data is committed**.
+
+### 36.1 Production vs development requirements
+
+| Requirement | Production (unchanged) | Development |
+| --- | --- | --- |
+| History | 2015-01-01 onward (MUST) | Enough history to build and test the pipeline; the actual range is documented |
+| Delisted securities | MUST | Best effort; gaps documented |
+| Ticker history, suspensions | MUST | Best effort; heuristics allowed if labelled |
+| Corporate actions, rights, dividends | MUST | Best effort from public sources |
+| IHSG | MUST | Required (available) |
+| Licence: storage, cloud, derived data | MUST | Recorded per source; not a gate |
+| Provenance | MUST | **MUST** — same provenance fields (§22) |
+
+### 36.2 License classification used here
+
+* **OPEN LICENSE**: an explicit licence is attached by the publisher (e.g. MIT,
+  Apache-2.0, CC BY, CC0, ODbL). A NonCommercial licence (CC BY-NC) is recorded
+  as explicit but **non-commercial**.
+* **LICENSE UNCLEAR**: publicly downloadable; no licence, or the publisher's
+  right to license the underlying data is unclear.
+* **RESTRICTED — NOT USED FOR DEVELOPMENT**: needs an account, API key,
+  subscription, or authentication. Access controls were not bypassed.
+
+**Upstream-rights caveat (applies to every IDX-derived dataset below):** the
+publishers state the data belongs to IDX. As quoted in the Dataset-Saham-IDX
+README (IDX Terms of Use no. 6; the IDX site itself returned HTTP 403 and was
+not read directly), IDX allows **non-commercial** use with full attribution and
+access date, prohibits commercial use without written permission, and does
+not permit web scraping/crawling [DS-1]. A repository licence cannot grant
+more rights than its publisher holds. Yahoo-derived datasets carry the Yahoo
+caveat recorded in §11.
+
+### 36.3 Sources investigated
+
+| # | Source | Type | Licence (as published) | Class | Inspected | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| DS-1 | wildangunawan/Dataset-Saham-IDX (GitHub) | IDX-format daily, per ticker | CC BY-NC 4.0 | OPEN (non-commercial); upstream rights UNCLEAR | **Yes** | Manual updates; states data taken from idx.co.id |
+| DS-2 | KAnggara75/Dataset-Saham-IDX (fork of DS-1) | same format, extended | CC BY-NC 4.0 (inherited) | as DS-1 | **Yes** | Extension fetched from a local API (`localhost:3000`); upstream undocumented |
+| DS-3 | KAnggara75/Dataset-Saham-IDX-SQL | SQL mirror of DS-1 | CC BY-NC 4.0 (NOASSERTION in API) | as DS-1 | Sample | Same range as DS-1 (2019-07-29 → 2025-02-21) |
+| DS-4 | Pholenk/IDX-Dataset (GitHub; mirrored to Kaggle `pholenk/eod-data-indonesia-stock-exchange`) | IDX-format daily per ticker + 56 index files | Data: **ODbL v1.0**; code: AGPL-3.0 | OPEN; upstream rights UNCLEAR | **Yes** | "Derived from files published by IDX"; collection method not in repo |
+| DS-5 | faisalburhanudin/idx (GitHub) | Yahoo-format daily per ticker | none | LICENSE UNCLEAR (Yahoo caveat) | **Yes** | Snapshot of 2019-04-08; release `07042019` |
+| DS-6 | theonegareth/daily-IHSG (Hugging Face; mirrors fadil05/…, ggvalentino99/…) | IHSG daily | MIT (declared) | OPEN (declared); source Yahoo ^JKSE | **Yes** | Card: "Source is Yahoo Finance" |
+| DS-7 | dimasirginsyh/indonesia-stock-dividends (GitHub) | cash dividends | none | LICENSE UNCLEAR | **Yes** | Upstream: mitbal/daguerreo-data (DS-8) |
+| DS-8 | mitbal/daguerreo-data (GitHub) | dividends, profiles, income statements | none | LICENSE UNCLEAR | Metadata + sync script | Sync script calls idx.co.id internal endpoints using browser impersonation (`curl_cffi`) |
+| DS-9 | nichsedge/idx-bei (GitHub; 51 forks incl. Alivanza/idx-bei) | IDX scraper toolkit + JSON snapshots (corporate actions, company profiles) | MIT (repository) | OPEN (code); data upstream rights UNCLEAR | **Yes** (`corporateActions.json`, `allCompanies.json`) | Scrapes IDX/KSEI |
+| DS-10 | kjhq/Indonesia-Stock-Symbols-and-Metadata (Hugging Face) | ticker, name, market, sector | CC0 1.0 | OPEN | **Yes** | 863 rows |
+| DS-11 | lensetek/idx-panel-data-descriptor (GitHub; Zenodo 10.5281/zenodo.21110404) | 95 large-cap tickers, yfinance | README: CC BY 4.0; **Zenodo: GPL-3.0-or-later** | Contradictory — UNCLEAR | **Yes** | Yahoo-sourced; 3.3% duplicate rows |
+| DS-12 | qywok/indonesia_stocks (Hugging Face) | 183 tickers, yfinance-style adjusted | MIT (declared) | OPEN (declared); Yahoo caveat | Sample | Starts 2023-01-02 |
+| DS-13 | nauraazalia/idx-prolonged-suspension-dataset (GitHub) | yearly alive/suspended label + ratios | CC BY 4.0 | OPEN | **Yes** | Not suspension dates |
+| DS-14 | nofendian17/idx_dataset (GitHub) | daily all-stock snapshots | none | LICENSE UNCLEAR | Sample | Scraped from imq21.com |
+| DS-15 | SeedFlora/idx-daily-data (GitHub) | few tickers, Yahoo | none | LICENSE UNCLEAR | README | Selected tickers only |
+| DS-16 | Zenodo 20603320 — LQ45 components 2023–2025 | 45 tickers | CC BY 4.0 | OPEN | Metadata | Small subset |
+| DS-17 | Zenodo 20739308 / 18276107 — bank stocks 2020–2025 | 4–5 tickers | CC BY 4.0 | OPEN | Metadata | Small subset |
+| DS-18 | Zenodo 17626537 — Financial data IDX 2020–2023 | fundamentals (xlsx) | CC BY 4.0 | OPEN | Metadata | Relevant to Phase 3, not prices |
+| DS-19 | Kaggle: eren2222 (2000–2024, 2020–2024), muamkh/ihsgstockdata, bestagi, garethharrison/daily-ihsg, pholenk mirror | various | per Kaggle page | **RESTRICTED — NOT USED FOR DEVELOPMENT** | No | Download requires an account (API returned 302) |
+| DS-20 | Other GitHub scrapers/tools (NeaByteLab/IDX-API, basnugroho/indonesia-stocks-scraper, kubil-ismail/indonesia-stock-exchange, alukito/idx-data, others found by search) | code, not datasets | various | n/a | README only | Not data sources |
+
+### 36.4 Measurements of inspected datasets
+
+Checks: duplicates on (ticker, date); OHLC consistency `high ≥ max(open, close,
+low)`, `low ≤ min(open, close, high)`, `high ≥ low`; `volume ≥ 0`. Rows with a
+zero in any OHLC field are excluded from the consistency checks and counted
+separately.
+
+| Metric | DS-4 Pholenk | DS-1 wildangunawan | DS-2 KAnggara75 fork | DS-5 faisalburhanudin | DS-11 lensetek |
+| --- | --- | --- | --- | --- | --- |
+| Files | 983 CSV (245 MB) | 958 CSV (178 MB) | 958 CSV | 627 CSV | 1 CSV (20 MB) |
+| Rows | 1,289,820 | 1,078,040 | 1,344,519 | 1,517,903 | 373,577 |
+| Tickers | 983 | 958 | 958 | 627 | 95 |
+| Date range | 2020-01-02 → 2026-05-29 | 2019-07-29 → 2025-02-21 | 2019-07-29 → 2026-05-08 | 2000-03-30 → 2019-04-08 | 2010-01-04 → 2026-07-01 |
+| Duplicates | 0% | 0% | 0% | 0% | 3.255% |
+| Missing OHLC fields | 0% | 0% | 0% | 0% | 0% |
+| Rows with a zero OHLC field | 81.1% (mostly `Open`) | 92.9% (`open_price`) | 82.3% | 0.0004% | 0% |
+| `Open` = 0 | 81.1% (2020–2024: 92–97%; 2025: 43%; 2026: 33%) | 92.9% | — | — | — |
+| High = Low = Volume = 0 (no trade/suspended) | 156,317 rows (12.1%) | 131,839 rows (12.2%) | — | — | — |
+| OHLC violations (checkable rows) | 0 | 0 | 0 | high 604, low 491, high<low 18 | high 28, low 55 |
+| Negative volume | 0 | 0 | 0 | 0 | 0 |
+| Price basis | **raw** (e.g. BBCA 33,450 on 2020-01-02, before its 2021 split) | raw | raw | split-adjusted (Yahoo `Close`) + `Adj Close` | adjusted (decimal prices) |
+| Volume unit | shares | shares (documented) | shares | shares (Yahoo) | shares |
+| Extra fields | previous close, value, frequency, bid/offer, listed & tradable shares, foreign buy/sell, non-regular volume/value/frequency, remarks | same as DS-4 plus `first_trade`, `delisting_date` (always empty) | as DS-1 | `Adj Close` | ticker |
+| Tickers with data by 2015-01-31 | 0 | 0 | 0 | 455 | 88 |
+
+**Index datasets**
+
+| Metric | DS-4 `COMPOSITE.csv` (IHSG) | DS-6 daily-IHSG |
+| --- | --- | --- |
+| Rows / range | 1,540 / 2020-01-02 → 2026-05-29 | 7,716 / 1995-01-02 → 2026-09-23 |
+| Rows 2015+ | 1,540 | 2,832 |
+| Fields | previous, high, low, close, constituents, volume, value, frequency, capitalization | open, high, low, close, volume |
+| Quality | — | 108 flat-OHLC rows and 132 zero-volume rows (early years); 0 OHLC violations |
+| Cross-check | 1,539 overlapping days; max relative close difference 0.754%; only 1 day > 0.1% | — |
+
+DS-4 also contains 55 other IDX index files (e.g. LQ45, IDX30, IDX80, sector indices).
+
+**Supplemental datasets**
+
+| Dataset | Measured |
+| --- | --- |
+| DS-7 dividends | 5,925 records; 602 tickers; ex-dates 2000-07-12 → 2026-08-20 (≈ 238–421 per year from 2015); 0 duplicates; fields `ex_date`, `dividend`, `payment_date`, `fiscal_year`, `dividend_type`; `payment_date` missing in 2,691 records (45%); no record date; gross vs net **not stated** |
+| DS-9 corporate actions | 1,652 records in 15 categories: rights (HMETD) 241, non-pre-emptive issues 76, stock splits 199, reverse splits 5, bonus shares 141, stock dividends 40, IPO 438, warrants 234, mergers 10, capital reductions 22, conversions 53, company listings 149, partial delistings 35, buyback 1, private placement 8. Fields: ticker, listing/recording date (`TanggalPencatatan`), shares before/after. **No ex-date, ratio, or exercise price.** |
+| DS-9 company list | 957 records (IDX company-profile JSON) |
+| DS-1 `List Emiten/all.csv` | 951 rows: code, name, listing date, shares, listing board (no delisting date) |
+| DS-10 metadata | 863 rows: name, ticker, market, sector |
+| DS-13 suspension labels | 5,611 company-year rows; 936 companies; years 2014–2023; 5,403 `alive`, 208 `suspended` |
+
+### 36.5 Cross-source validation findings
+
+* **DS-4 vs DS-1 closes:** 1,002,669 overlapping (ticker, date) rows; 99.483%
+  identical; **5,186 differ, all on 9 dates in 2024** (2024-02-01, 02-13,
+  02-28, 06-26, 06-27, 06-28, 07-04, 07-31, 08-15; 543–618 tickers per date).
+  Of those, 2,042 are exact one-trading-day shifts (DS-1 close = DS-4 next-day
+  close). One source is misaligned on those dates; **which one is not
+  determined**. DS-2 agrees with DS-1 on all 5,186, but DS-2 inherits DS-1's
+  history, so this is not independent evidence. Handling: §23 (preserve both,
+  flag, never overwrite).
+* **DS-2 vs DS-4 closes:** 1,271,258 overlapping rows; 99.558% identical.
+* **Open prices** are zero for most rows before 2025 in **both** IDX-format
+  sources, so this reflects the upstream field, not one publisher's error.
+  Development code must treat `open = 0` as **missing**, not as a price.
+* **Missing trading days:** DS-4 has 10 gaps longer than 5 calendar days; all
+  fall around holiday periods (e.g. 2024-04-05 → 2024-04-16, 2025-03-27 →
+  2025-04-08). DS-4's README warns that some non-holiday dates may be missing.
+  A verified IDX calendar is still required (§26).
+* **Encoding:** DS-4 and DS-2 CSVs start with a UTF-8 byte-order mark.
+
+### 36.6 Development source map
+
+| Dataset | Type | License | Tickers | Start | End | OHLCV | Dividends | Corporate Actions | IHSG | Provenance | Status |
+| ------- | ---- | ------: | ------: | ----: | --: | ----- | --------- | ----------------- | ---- | ---------- | ------ |
+| DS-4 Pholenk/IDX-Dataset | IDX-format daily | ODbL v1.0 (upstream IDX) | 983 | 2020-01-02 | 2026-05-29 | Yes (open often 0) | No | No | Yes (`COMPOSITE`) | Commit `9bb3b26bd28ab46bc2f3e74a7c03805ce053301b`; archive SHA-256 `5165948e756e113577458769efd609040f7534d2ede0f4ba1967dba593566c91` | **Selected — core OHLCV + IHSG** |
+| DS-1 wildangunawan | IDX-format daily | CC BY-NC 4.0 (upstream IDX) | 958 | 2019-07-29 | 2025-02-21 | Yes (open often 0) | No | No | No | Commit `bc0ac7712c` (2025-02-23); archive SHA-256 `e7c44464f232935c8797d91cf4def542ee18b79f041bef7fd6bfb71e89abbefe` | **Selected — cross-check** |
+| DS-2 KAnggara75 fork | IDX-format daily | CC BY-NC 4.0 (inherited) | 958 | 2019-07-29 | 2026-05-08 | Yes | No | No | No | Commit `ad3fba81abb236966b944bffde67c6c5ced8395b`; archive SHA-256 `a3634b09b5aeba54eb8dad21c946751ae95988dc5847af5bc4bc5812df58f6bc`; extension upstream undocumented | Supplemental — cross-check only |
+| DS-5 faisalburhanudin | Yahoo-format daily | none | 627 | 2000-03-30 | 2019-04-08 | Yes (split-adjusted) | No | No | No | Snapshot 2019-04-08 | **Selected — pre-2020 development history, flagged** |
+| DS-6 daily-IHSG | index daily | MIT (declared; Yahoo source) | 1 index | 1995-01-02 | 2026-09-23 | Yes | n/a | n/a | Yes | HF dataset, refreshed daily | **Selected — IHSG pre-2020 and latest** |
+| DS-7 indonesia-stock-dividends | dividends | none | 602 | 2000-07-12 | 2026-08-20 | No | Yes | No | No | Upstream DS-8 (IDX via automated collection) | **Selected — dividends** |
+| DS-9 nichsedge/idx-bei | corporate actions + profiles | MIT (repo; upstream IDX) | 957 (profiles) | 1979 | 2026-08 | No | No | Partial (share counts, dates) | No | Scraped from IDX | **Selected — corporate-action events, metadata** |
+| DS-10 kjhq metadata | security metadata | CC0 | 863 | — | — | No | No | No | No | HF dataset | Supplemental — sector names |
+| DS-1 `List Emiten` | security metadata | CC BY-NC 4.0 | 951 | — | 2025-02 | No | No | No | No | as DS-1 | Supplemental — listing dates, boards |
+| DS-11 lensetek | yfinance daily | contradictory | 95 | 2010-01-04 | 2026-07-01 | Yes (adjusted) | No | No | Yes | Zenodo DOI | Not selected (small, licence contradiction) |
+| DS-12 qywok | yfinance daily | MIT (declared) | 183 | 2023-01-02 | 2026-06-11 | Yes (adjusted) | No | No | No | HF | Not selected (short) |
+| DS-13 suspension labels | yearly status | CC BY 4.0 | 936 | 2014 | 2023 | No | No | No | No | research dataset | Supplemental — labels only |
+| DS-19 Kaggle datasets | various | various | — | — | — | — | — | — | — | — | **RESTRICTED — NOT USED FOR DEVELOPMENT** |
+
+### 36.7 Selected development sources
+
+**Core development source — daily OHLCV:** DS-4 Pholenk/IDX-Dataset
+(2020-01-02 → 2026-05-29, 983 tickers, raw IDX-format prices, ODbL). Selected
+for development because it is the only full-universe, IDX-format source found
+with an explicit open-data licence and the longest recent range. This is **not**
+a production selection.
+
+**Supplemental development sources**
+
+| Need | Source | Scope / caveat |
+| --- | --- | --- |
+| Cross-check OHLCV | DS-1 (and DS-2 for 2025-02 → 2026-05) | Disagreement on 9 dates in 2024 (§36.5) |
+| Pre-2020 history | DS-5 | 2000–2019-04, **split-adjusted Yahoo basis**, licence unclear. Gap 2019-04-09 → 2019-07-26 to DS-1 and a different price basis: **not to be stitched** onto raw IDX data without adjustment factors. |
+| IHSG | DS-4 `COMPOSITE` (2020+); DS-6 (1995+, Yahoo) | Agree within 0.754% on overlap |
+| Dividends | DS-7 | Gross/net not stated; payment date 45% missing; no record date |
+| Corporate actions | DS-9 `corporateActions.json` | Share counts and listing dates; no ex-date or exercise price, so rights adjustments are not computable from it alone |
+| Security metadata | DS-1 `List Emiten`, DS-10, DS-9 company profiles | No ISIN; no delisting dates |
+| Ticker history | none found | Gap |
+| Suspensions | Heuristic only: high = low = volume = 0 in DS-4/DS-1 (documented as the suspension marker in DS-1's column notes) | Not distinguishable from "no trades"; DS-13 gives yearly labels only |
+
+### 36.8 Limitations and production gaps
+
+* **History:** the full-universe raw IDX-format data starts **2019-07-29**
+  (DS-1) or **2020-01-02** (DS-4). Production MUST (2015-01-01) is **not**
+  met by raw data; 2015–2019 exists only as Yahoo split-adjusted data (DS-5).
+* **Delisted securities:** DS-4 has 24 tickers whose last date is before
+  2026-05-01 (e.g. APOL, BORN, CKRA, FINN, GREN, ITTG); whether each was
+  delisted, suspended, or renamed is **not recorded**. DS-1's
+  `delisting_date` column is empty for all rows.
+* **Open prices** missing for most rows before 2025.
+* **Ticker changes, ISINs, suspension dates, rights terms:** not available
+  from any development source.
+* **Dividends:** gross vs net unknown; payment dates incomplete.
+* **Licensing:** IDX-derived data is subject to IDX's non-commercial,
+  no-scraping terms (as quoted by DS-1); DS-1/DS-2 are NonCommercial; DS-4
+  is ODbL (share-alike applies if a derived database is ever publicly used
+  or distributed); DS-5, DS-7, DS-8 have no licence; DS-6, DS-11, DS-12 are
+  Yahoo-derived. **None of these satisfy production requirements M1/M11.**
+* **Provenance of collection:** DS-8's collector uses browser impersonation
+  against IDX endpoints; DS-2's extension comes from an undocumented local
+  API. These are recorded, not endorsed.
+* **Reproducibility:** repositories change; development ingestion must pin
+  the commit SHA and archive checksum (§36.6) and store the raw files with
+  provenance (§22).
+
+### 36.9 Provider-neutral interface
+
+`data/ingestion/provider.py` defines the minimal contract
+(`MarketDataProvider`: `list_securities`, `get_daily_prices`, `get_dividends`,
+`get_corporate_actions`, `get_index_history`) and immutable record types that
+each carry mandatory `Provenance` (§22). It fixes three semantics the
+development data showed to be necessary: `open` is optional (missing opens);
+`price_basis` distinguishes raw from adjusted; `trading_status` distinguishes
+traded / no trades / suspended / unknown. **No provider is implemented.**
+
+### 36.10 Development source links (checked 2026-09-24)
+
+| # | URL |
+| --- | --- |
+| DS-1 | https://github.com/wildangunawan/Dataset-Saham-IDX |
+| DS-2 | https://github.com/KAnggara75/Dataset-Saham-IDX |
+| DS-3 | https://github.com/KAnggara75/Dataset-Saham-IDX-SQL |
+| DS-4 | https://github.com/Pholenk/IDX-Dataset · mirror https://www.kaggle.com/datasets/pholenk/eod-data-indonesia-stock-exchange |
+| DS-5 | https://github.com/faisalburhanudin/idx |
+| DS-6 | https://huggingface.co/datasets/theonegareth/daily-IHSG |
+| DS-7 | https://github.com/dimasirginsyh/indonesia-stock-dividends |
+| DS-8 | https://github.com/mitbal/daguerreo-data |
+| DS-9 | https://github.com/nichsedge/idx-bei |
+| DS-10 | https://huggingface.co/datasets/kjhq/Indonesia-Stock-Symbols-and-Metadata |
+| DS-11 | https://github.com/lensetek/idx-panel-data-descriptor · https://zenodo.org/records/21110404 |
+| DS-12 | https://huggingface.co/datasets/qywok/indonesia_stocks |
+| DS-13 | https://github.com/nauraazalia/idx-prolonged-suspension-dataset |
+| DS-14 | https://github.com/nofendian17/idx_dataset |
+| DS-15 | https://github.com/SeedFlora/idx-daily-data |
+| DS-16 | https://zenodo.org/records/20603320 |
+| DS-17 | https://zenodo.org/records/20739308 · https://zenodo.org/records/18276107 |
+| DS-18 | https://zenodo.org/records/17626537 |
+| DS-19 | https://www.kaggle.com/datasets/eren2222/complete-indonesia-stock-exchange-idx-2000-2024 · https://www.kaggle.com/datasets/eren2222/indonesia-stock-exchange-idx-historical-price · https://www.kaggle.com/datasets/muamkh/ihsgstockdata · https://www.kaggle.com/datasets/bestagi/indonesia-stock-marketidx-price-data · https://www.kaggle.com/datasets/garethharrison/daily-ihsg |
+| DS-20 | https://github.com/NeaByteLab/IDX-API · https://github.com/basnugroho/indonesia-stocks-scraper · https://github.com/kubil-ismail/indonesia-stock-exchange · https://github.com/alukito/idx-data |

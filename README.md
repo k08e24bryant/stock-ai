@@ -7,13 +7,15 @@ analysis into an **explainable** research assistant. It is explicitly *not* a
 black-box price predictor — see [CLAUDE.md](CLAUDE.md) for the full philosophy
 and [PROJECT_PLAN.md](PROJECT_PLAN.md) for the roadmap.
 
-> **Status: Phase 1 (environment & services) complete. 43 tests pass (38 at the end of Phase 0).**
+> **Status: Phase 1 (environment & services) complete. 48 tests pass (38 at the end of Phase 0, 43 at the end of Phase 1).**
 > PostgreSQL 17 and Redis 7 run in Docker and are reachable from the app.
-> **Next: Phase 2 (market data). Not started; blocked on the data-source
-> decision (Q2).** Market-data requirements, provider research, and provider
-> validation are recorded in [docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md);
-> no source has been selected and the implementation readiness gate is BLOCKED. No data ingestion, valuation, technical, ML,
-> backtesting, or trading logic exists yet. Git state is recorded in [CONTEXT.md](CONTEXT.md).
+> **Next: Phase 2 (market data). Not started.** $0 development mode:
+> production data is BLOCKED (no production provider selected), development
+> data is UNBLOCKED, and implementation is ready to start using public
+> development sources. Requirements, provider research, validation, and the
+> development source map are in [docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md).
+> No data ingestion, valuation, technical, ML, backtesting, or trading logic
+> exists yet. Git state is recorded in [CONTEXT.md](CONTEXT.md).
 
 ---
 
@@ -156,10 +158,11 @@ docs/           project documentation (data_sources/: market-data requirements a
 tests/          pytest suite
 ```
 
-Only `backend/` contains implementation code so far: `backend/config.py`
-(environment-driven settings) and `backend/database.py` (engine, session
-factory, connectivity check). Every other package contains only a docstring
-stating its responsibility.
+Implementation code so far: `backend/config.py` (environment-driven
+settings), `backend/database.py` (engine, session factory, connectivity
+check), and `data/ingestion/provider.py` (provider-neutral market-data
+interface — no providers implemented). Every other package contains only a
+docstring stating its responsibility.
 
 ---
 
