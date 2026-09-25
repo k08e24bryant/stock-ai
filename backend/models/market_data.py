@@ -103,9 +103,7 @@ class DataSource(Base):
     source_id: Mapped[str] = mapped_column(Text, primary_key=True)
     source_name: Mapped[str] = mapped_column(Text)
     homepage_url: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=_utc_now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_utc_now())
 
 
 class SourceSnapshot(Base):
@@ -120,8 +118,7 @@ class SourceSnapshot(Base):
             name="archive_sha256_format",
         ),
         CheckConstraint(
-            "snapshot_id = source_id || ':' || source_revision || ':' "
-            "|| left(content_sha256, 16)",
+            "snapshot_id = source_id || ':' || source_revision || ':' || left(content_sha256, 16)",
             name="snapshot_id_derived",
         ),
         CheckConstraint("file_count >= 0", name="file_count_non_negative"),
@@ -139,9 +136,7 @@ class SourceSnapshot(Base):
     licence_reference: Mapped[str] = mapped_column(Text)
     raw_storage_path: Mapped[str] = mapped_column(Text)
     file_count: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=_utc_now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_utc_now())
 
 
 class SourceFile(Base):
@@ -162,9 +157,7 @@ class SourceFile(Base):
     sha256: Mapped[str] = mapped_column(Text)
     row_count: Mapped[int] = mapped_column(Integer)
     source_key: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=_utc_now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_utc_now())
 
 
 class IngestionRun(Base):
@@ -213,16 +206,12 @@ class Security(Base):
         Index("ix_securities_ticker", "ticker"),
     )
 
-    security_id: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=True), primary_key=True
-    )
+    security_id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     ticker: Mapped[str] = mapped_column(Text)
     name: Mapped[str | None] = mapped_column(Text)
     currency: Mapped[str] = mapped_column(Text, server_default=text("'IDR'"))
     identity_kind: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=_utc_now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_utc_now())
 
 
 class SecuritySourceKey(Base):
@@ -250,9 +239,7 @@ class SecuritySourceKey(Base):
     quality_flags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default=text("'{}'::text[]")
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=_utc_now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_utc_now())
 
 
 class DailyPrice(Base):
@@ -271,9 +258,7 @@ class DailyPrice(Base):
         CheckConstraint("value IS NULL OR value >= 0", name="value_non_negative"),
         CheckConstraint("frequency IS NULL OR frequency >= 0", name="frequency_non_negative"),
         CheckConstraint("source_line >= 1", name="source_line_positive"),
-        CheckConstraint(
-            _in("trading_status", TRADING_STATUSES), name="trading_status_vocabulary"
-        ),
+        CheckConstraint(_in("trading_status", TRADING_STATUSES), name="trading_status_vocabulary"),
         # Every operand is guarded with IS NOT NULL: a CHECK whose result is NULL
         # passes, so an unguarded "volume > 0" would accept a NULL volume.
         CheckConstraint(
@@ -337,9 +322,7 @@ class DataQualityIncident(Base):
         Index("ix_data_quality_incidents_security_id_trading_date", "security_id", "trading_date"),
     )
 
-    incident_id: Mapped[int] = mapped_column(
-        BigInteger, Identity(always=True), primary_key=True
-    )
+    incident_id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     ingestion_run_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("ingestion_runs.ingestion_run_id", ondelete=RESTRICT)
     )
@@ -358,9 +341,7 @@ class DataQualityIncident(Base):
     )
     source_line: Mapped[int | None] = mapped_column(Integer)
     details: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=_utc_now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=_utc_now())
 
 
 __all__ = [

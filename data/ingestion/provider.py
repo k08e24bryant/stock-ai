@@ -65,18 +65,21 @@ class PriceBasis(StrEnum):
 
 
 class TradingStatus(StrEnum):
-    """Security-day status (requirement M7).
+    """Security-day status (Phase 2B data contract, Decision 1).
 
-    Use the most specific status the source actually supports.
-    `NO_TRADE_OR_SUSPENDED` exists because many sources show a zero-volume day
-    without saying whether the security was suspended or simply not traded;
-    that uncertainty must be preserved rather than guessed.
+    * ``TRADED`` — at least one regular-market trade was recorded.
+    * ``NO_REGULAR_MARKET_TRADE`` — no regular-market trade was recorded by
+      the source. The source does not establish whether this was a
+      suspension, no trading activity, or activity occurring only outside the
+      regular market.
+    * ``UNKNOWN`` — the status cannot be determined from the source.
+
+    Values match the database vocabulary. Suspension-specific statuses are
+    added only when an authoritative suspension source exists.
     """
 
     TRADED = "traded"
-    NO_TRADES = "no_trades"
-    SUSPENDED = "suspended"
-    NO_TRADE_OR_SUSPENDED = "no_trade_or_suspended"
+    NO_REGULAR_MARKET_TRADE = "no_regular_market_trade"
     UNKNOWN = "unknown"
 
 
@@ -93,17 +96,24 @@ class CorporateActionType(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Provenance:
-    """Mandatory provenance for every ingested record (requirements doc §22)."""
+    """Provenance carried by every record a provider returns.
+
+    `retrieved_at` is when *our system* obtained the data. `available_at` is
+    when the data was actually available to market participants; it is
+    ``None`` (unknown) unless the source supplies an authoritative timestamp,
+    and is never filled from `retrieved_at` (Phase 2B data contract,
+    Decision 3). `ingestion_run_id` is set only when a record is produced
+    inside a database ingestion run.
+    """
 
     source_id: str
     source_security_id: str
     retrieved_at: datetime
-    ingestion_run_id: str
     raw_record_ref: str
     licence_ref: str
     parser_version: str
-    available_at: datetime
-    available_at_is_fallback: bool
+    ingestion_run_id: str | None = None
+    available_at: datetime | None = None
     revision_status: RevisionStatus = RevisionStatus.ORIGINAL
     source_timestamp: datetime | None = None
     published_at: datetime | None = None
@@ -129,8 +139,12 @@ class DailyPrice:
     """One security-day of market data. `open` may be unknown in some sources.
 
     `close` is the source's closing (or reference) price. On a day without
-    trades a source may repeat the previous close; `trading_status` tells the
-    caller whether `close` reflects trading on that day.
+    regular-market trades a source may repeat a reference price;
+    `trading_status` tells the caller whether `close` reflects trading on that
+    day. `reference_price` is the exchange reference price and is not
+    necessarily the prior trading day's close. Volume, value, and frequency
+    are regular-market figures. `quality_flags` are sorted, unique codes from
+    the documented vocabulary.
     """
 
     source_security_id: str
@@ -144,10 +158,11 @@ class DailyPrice:
     open: Decimal | None = None
     high: Decimal | None = None
     low: Decimal | None = None
-    previous_close: Decimal | None = None
+    reference_price: Decimal | None = None
     volume_shares: int | None = None
     value: Decimal | None = None
     frequency: int | None = None
+    quality_flags: tuple[str, ...] = ()
 
     @property
     def is_adjusted(self) -> bool:

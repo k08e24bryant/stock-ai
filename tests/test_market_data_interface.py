@@ -18,12 +18,9 @@ def _provenance() -> p.Provenance:
         source_id="example",
         source_security_id="BBCA",
         retrieved_at=now,
-        ingestion_run_id="run-1",
         raw_record_ref="raw/example/BBCA.csv#sha256=0",
         licence_ref="https://example.invalid/licence (read 2026-09-24)",
         parser_version="0",
-        available_at=now,
-        available_at_is_fallback=True,
     )
 
 
@@ -70,6 +67,8 @@ def test_records_are_immutable_and_carry_provenance() -> None:
     )
     assert price.open is None  # some public sources do not supply opens
     assert price.is_adjusted is False
+    assert price.quality_flags == ()
+    assert price.provenance.available_at is None  # unknown, never retrieval time
     assert price.currency == "IDR"
     with pytest.raises(dataclasses.FrozenInstanceError):
         price.close = Decimal("1")  # type: ignore[misc]

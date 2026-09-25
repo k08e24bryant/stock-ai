@@ -88,7 +88,7 @@ def test_valid_traded_row(tmp_path: Path) -> None:
         Decimal("5700.0"),
     )
     assert price.volume_shares == 1015296600
-    assert price.previous_close == Decimal("5975.0")
+    assert price.reference_price == Decimal("5975.0")  # source "Previous"
     assert price.ticker == "BBCA"
     assert validate_daily_price(price) == ()
 
@@ -116,13 +116,13 @@ def test_zero_volume_row_is_kept_with_uncertain_status(tmp_path: Path) -> None:
     )  # fmt: skip
     write_stock(tmp_path, "BBCA", [no_trade])
     [price] = provider(tmp_path).get_daily_prices(BBCA, *FULL_RANGE)
-    assert price.trading_status is TradingStatus.NO_TRADE_OR_SUSPENDED  # not claimed SUSPENDED
+    assert price.trading_status is TradingStatus.NO_REGULAR_MARKET_TRADE  # not a suspension
     assert (price.open, price.high, price.low) == (None, None, None)
     assert price.close == Decimal("535.0")
     assert price.volume_shares == 0
     codes = {i.code: i.severity for i in validate_daily_price(price)}
     assert codes == {
-        "no_trade_or_suspended": Severity.EXPECTED_SOURCE_CONDITION,
+        "no_regular_market_trade": Severity.EXPECTED_SOURCE_CONDITION,
         "open_missing": Severity.EXPECTED_SOURCE_CONDITION,
     }
 
@@ -196,10 +196,10 @@ def test_every_record_carries_provenance(tmp_path: Path) -> None:
         assert prov.source_security_id == "BBCA"
         assert prov.retrieved_at == RETRIEVED_AT
         assert prov.raw_record_ref.startswith(f"dataset/stocks/csv/BBCA.csv@sha256:{digest}#line=")
-        assert prov.available_at == RETRIEVED_AT and prov.available_at_is_fallback
+        assert prov.available_at is None  # historical availability unknown
         assert prov.source_version == f"git:{REVISION}"
         assert "ODbL" in prov.licence_ref
-        assert prov.ingestion_run_id == f"{SOURCE_ID}@{REVISION}@20260924T112814Z"
+        assert prov.ingestion_run_id is None  # set only inside a database run
         lines.add(prov.raw_record_ref.rsplit("=", 1)[1])
     assert lines == {"2", "3"}
 

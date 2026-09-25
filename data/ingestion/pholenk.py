@@ -26,17 +26,20 @@ Assumptions (verified against revision 9bb3b26 on 2026-09-24)
     * Prices are **raw** (unadjusted); no adjustment is applied here.
     * ``Open = 0`` means the source did not supply an open. It becomes
       ``open=None`` and is never replaced by another price.
-    * ``Volume = 0`` with ``High = Low = 0`` is a zero-volume day whose close
-      repeats the previous close. The source does not say whether the security
-      was suspended or simply not traded, so the status is
-      ``NO_TRADE_OR_SUSPENDED``; high/low become ``None``.
+    * ``Volume``, ``Value``, ``Frequency`` are **regular-market** figures.
+    * ``Volume = 0`` with ``High = Low = 0`` means no regular-market trade was
+      recorded; the close repeats the reference price. The source does not
+      say why (suspension, no trading, or non-regular activity only), so the
+      status is ``NO_REGULAR_MARKET_TRADE``; open/high/low become ``None``.
+    * ``Previous`` is the exchange reference price (``reference_price``), not
+      necessarily the prior close.
 
 Limitations
     * Identity is **development-only**: ``dev:pholenk-idx-dataset:<KEY>``,
       where KEY is the file name. It is not an ISIN and does not survive
       ticker changes.
-    * ``available_at`` is not supplied by the source; the retrieval time is
-      used and flagged as a fallback (requirements doc §22).
+    * Historical availability time is unknown; ``available_at`` stays
+      ``None`` (Phase 2B data contract, Decision 3).
     * Dividends, corporate actions, and index history are not provided in
       Phase 2A (`NotProvidedError`).
 
@@ -59,7 +62,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
+import io
 import json
 import logging
 import re
@@ -81,6 +84,7 @@ from data.ingestion.provider import (
     Security,
     TradingStatus,
 )
+from data.ingestion.snapshot import MANIFEST_NAME, SnapshotManifest, read_bytes, sha256_hex
 from data.validation.daily_prices import (
     Severity,
     build_quality_report,
@@ -92,7 +96,8 @@ from data.validation.daily_prices import (
 logger = logging.getLogger(__name__)
 
 SOURCE_ID = "pholenk-idx-dataset"
-PARSER_VERSION = "pholenk-csv-1"
+SOURCE_HOMEPAGE = "https://github.com/Pholenk/IDX-Dataset"
+PARSER_VERSION = "pholenk-csv-2"
 STOCKS_DIR = Path("dataset") / "stocks" / "csv"
 DEV_ID_PREFIX = f"dev:{SOURCE_ID}:"
 EXPECTED_COLUMNS: tuple[str, ...] = (
@@ -123,6 +128,9 @@ EXPECTED_COLUMNS: tuple[str, ...] = (
     "NonRegularValue",
     "NonRegularFrequency",
 )
+FLAG_NON_REGULAR_ACTIVITY = "non_regular_activity_present"
+FLAG_UNVERIFIED_TRADING_DATE = "unverified_trading_date"
+FLAG_TICKER_COLUMN_MISMATCH = "source_ticker_column_mismatch"
 _KEY_RE = re.compile(r"[A-Z0-9]+")
 _DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})(?:[T ]00:00:00(?:\.0+)?)?")
 
@@ -174,22 +182,62 @@ class PholenkRawRow:
     values: Mapping[str, str]
 
 
+@dataclass(frozen=True, slots=True)
+class MalformedRow:
+    """A data line that cannot be split into the expected columns."""
+
+    line: int
+    cells: tuple[str, ...]
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedStockFile:
+    """Rows parsed from one stock file's bytes, plus lines that did not parse."""
+
+    rows: tuple[PholenkRawRow, ...]
+    malformed: tuple[MalformedRow, ...]
+
+
+def parse_bytes(data: bytes, name: str) -> ParsedStockFile:
+    """Parse one stock file from exactly these bytes.
+
+    Structural problems (encoding, header) raise `PholenkFormatError`; a data
+    line with the wrong number of fields is returned as a `MalformedRow` so a
+    caller can quarantine it without discarding the rest of the file.
+    """
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise PholenkFormatError(f"{name}: not valid UTF-8 ({exc.reason})") from exc
+    reader = csv.reader(io.StringIO(text, newline=""))
+    header = tuple(next(reader, ()))
+    if header != EXPECTED_COLUMNS:
+        raise PholenkFormatError(f"{name}: unexpected header {header!r}")
+    rows: list[PholenkRawRow] = []
+    malformed: list[MalformedRow] = []
+    for cells in reader:
+        if len(cells) != len(header):
+            reason = f"{len(cells)} fields, expected {len(header)}"
+            malformed.append(MalformedRow(reader.line_num, tuple(cells), reason))
+            continue
+        rows.append(PholenkRawRow(reader.line_num, dict(zip(header, cells, strict=True))))
+    return ParsedStockFile(tuple(rows), tuple(malformed))
+
+
 def parse_file(path: Path) -> tuple[PholenkRawRow, ...]:
-    """Read one stock file into raw rows, checking the header and row width."""
-    with path.open(encoding="utf-8-sig", newline="") as fh:
-        reader = csv.reader(fh)
-        header = tuple(next(reader, ()))
-        if header != EXPECTED_COLUMNS:
-            raise PholenkFormatError(f"{path.name}: unexpected header {header!r}")
-        rows: list[PholenkRawRow] = []
-        for cells in reader:
-            if len(cells) != len(header):
-                raise PholenkFormatError(
-                    f"{path.name}#line={reader.line_num}: {len(cells)} fields, "
-                    f"expected {len(header)}"
-                )
-            rows.append(PholenkRawRow(reader.line_num, dict(zip(header, cells, strict=True))))
-    return tuple(rows)
+    """Strictly parse one stock file: any malformed line raises."""
+    parsed = parse_bytes(path.read_bytes(), path.name)
+    if parsed.malformed:
+        first = parsed.malformed[0]
+        raise PholenkFormatError(f"{path.name}#line={first.line}: {first.reason}")
+    return parsed.rows
+
+
+def ticker_case_mismatches(rows: Sequence[PholenkRawRow], key: str) -> tuple[str, ...]:
+    """Sorted distinct Ticker cells that differ from the file key only by case."""
+    cells = {r.values["Ticker"].strip() for r in rows}
+    return tuple(sorted(t for t in cells if t != key and t.upper() == key))
 
 
 # ---------------------------------------------------------------- normalization
@@ -230,12 +278,22 @@ def _positive_or_none(number: Decimal) -> Decimal | None:
 
 
 def classify_trading_status(volume: int, high: Decimal, low: Decimal) -> TradingStatus:
-    """Map the source's volume/range pattern to an explicit status."""
+    """Map the source's regular-market volume/range pattern to a status."""
     if volume > 0:
         return TradingStatus.TRADED
     if volume == 0 and high == 0 and low == 0:
-        return TradingStatus.NO_TRADE_OR_SUSPENDED
+        return TradingStatus.NO_REGULAR_MARKET_TRADE
     return TradingStatus.UNKNOWN
+
+
+def row_quality_flags(non_regular_volume: int, trade_date: date) -> tuple[str, ...]:
+    """Documented row flags, sorted and unique (Phase 2B data contract)."""
+    flags: set[str] = set()
+    if non_regular_volume > 0:
+        flags.add(FLAG_NON_REGULAR_ACTIVITY)
+    if trade_date.weekday() >= 5:  # no authoritative calendar: weekend check only
+        flags.add(FLAG_UNVERIFIED_TRADING_DATE)
+    return tuple(sorted(flags))
 
 
 def normalize_row(raw: PholenkRawRow, *, key: str, provenance: Provenance) -> DailyPrice:
@@ -252,6 +310,7 @@ def normalize_row(raw: PholenkRawRow, *, key: str, provenance: Provenance) -> Da
     high = _decimal(v, "High", where)
     low = _decimal(v, "Low", where)
     volume = _integer(v, "Volume", where)
+    non_regular_volume = _integer(v, "NonRegularVolume", where)
     return DailyPrice(
         source_security_id=development_security_id(key),
         ticker=key,
@@ -263,10 +322,11 @@ def normalize_row(raw: PholenkRawRow, *, key: str, provenance: Provenance) -> Da
         open=_positive_or_none(_decimal(v, "Open", where)),
         high=_positive_or_none(high),
         low=_positive_or_none(low),
-        previous_close=_positive_or_none(_decimal(v, "Previous", where)),
+        reference_price=_positive_or_none(_decimal(v, "Previous", where)),
         volume_shares=volume,
         value=_decimal(v, "Value", where),
         frequency=_integer(v, "Frequency", where),
+        quality_flags=row_quality_flags(non_regular_volume, trade_date),
     )
 
 
@@ -306,6 +366,57 @@ def resolve_duplicates(prices: Sequence[DailyPrice]) -> tuple[list[DailyPrice], 
     return kept, len(drop)
 
 
+# ---------------------------------------------------------------- provenance & manifest
+
+
+def record_provenance(
+    *,
+    relative_path: str,
+    file_sha256: str,
+    line: int,
+    key: str,
+    retrieved_at: datetime,
+    revision: str,
+    licence_ref: str,
+) -> Provenance:
+    """Provenance of one source line. `available_at` stays unknown (None)."""
+    return Provenance(
+        source_id=SOURCE_ID,
+        source_security_id=key,
+        retrieved_at=retrieved_at,
+        raw_record_ref=f"{relative_path}@sha256:{file_sha256}#line={line}",
+        licence_ref=licence_ref,
+        parser_version=PARSER_VERSION,
+        source_version=f"git:{revision}",
+    )
+
+
+def read_manifest(root: Path) -> SnapshotManifest:
+    """Read ``<root>/manifest.json`` written when the snapshot was downloaded."""
+    path = root / MANIFEST_NAME
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PholenkFormatError(f"cannot read {path}: {exc}") from exc
+    if raw.get("source_id") != SOURCE_ID:
+        raise PholenkFormatError(f"manifest source_id is {raw.get('source_id')!r}")
+    try:
+        retrieved_at = datetime.fromisoformat(str(raw["retrieved_at"]).replace("Z", "+00:00"))
+        licence = str(raw.get("licence", DEFAULT_LICENCE_REF))
+        read_on = raw.get("licence_read_on")
+        archive = raw.get("archive_sha256")
+        return SnapshotManifest(
+            source_id=SOURCE_ID,
+            source_url=str(raw.get("source_url", SOURCE_HOMEPAGE)),
+            revision=str(raw["revision"]),
+            archive_sha256=str(archive) if archive else None,
+            retrieved_at=retrieved_at,
+            licence_reference=f"{licence}; read {read_on}" if read_on else licence,
+        )
+    except (KeyError, ValueError) as exc:
+        raise PholenkFormatError(f"{path}: incomplete manifest ({exc})") from exc
+
+
 # ---------------------------------------------------------------- provider
 
 DEFAULT_LICENCE_REF = (
@@ -323,7 +434,6 @@ class PholenkProvider:
         *,
         retrieved_at: datetime,
         revision: str,
-        ingestion_run_id: str | None = None,
         licence_ref: str = DEFAULT_LICENCE_REF,
     ) -> None:
         if retrieved_at.tzinfo is None:
@@ -335,19 +445,12 @@ class PholenkProvider:
         self.retrieved_at = retrieved_at.astimezone(UTC)
         self.revision = revision
         self.licence_ref = licence_ref
-        self.ingestion_run_id = ingestion_run_id or (
-            f"{SOURCE_ID}@{revision}@{self.retrieved_at:%Y%m%dT%H%M%SZ}"
-        )
-        self._file_hashes: dict[Path, str] = {}
 
     @classmethod
     def from_manifest(cls, root: Path) -> PholenkProvider:
         """Build a provider from ``<root>/manifest.json``."""
-        manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-        if manifest.get("source_id") != SOURCE_ID:
-            raise PholenkFormatError(f"manifest source_id is {manifest.get('source_id')!r}")
-        retrieved_at = datetime.fromisoformat(manifest["retrieved_at"].replace("Z", "+00:00"))
-        return cls(root, retrieved_at=retrieved_at, revision=manifest["revision"])
+        manifest = read_manifest(root)
+        return cls(root, retrieved_at=manifest.retrieved_at, revision=manifest.revision)
 
     # -- helpers
 
@@ -357,24 +460,20 @@ class PholenkProvider:
             raise UnknownSecurityError(development_security_id(key))
         return path
 
-    def _file_hash(self, path: Path) -> str:
-        if path not in self._file_hashes:
-            self._file_hashes[path] = hashlib.sha256(path.read_bytes()).hexdigest()
-        return self._file_hashes[path]
+    def _read(self, path: Path) -> tuple[ParsedStockFile, str]:
+        """Parse a file and hash **the same bytes** (single read)."""
+        data = read_bytes(path)
+        return parse_bytes(data, path.name), sha256_hex(data)
 
-    def _provenance(self, path: Path, key: str, line: int) -> Provenance:
-        rel = path.relative_to(self.root).as_posix()
-        return Provenance(
-            source_id=SOURCE_ID,
-            source_security_id=key,
+    def _provenance(self, path: Path, key: str, line: int, file_sha256: str) -> Provenance:
+        return record_provenance(
+            relative_path=path.relative_to(self.root).as_posix(),
+            file_sha256=file_sha256,
+            line=line,
+            key=key,
             retrieved_at=self.retrieved_at,
-            ingestion_run_id=self.ingestion_run_id,
-            raw_record_ref=f"{rel}@sha256:{self._file_hash(path)}#line={line}",
+            revision=self.revision,
             licence_ref=self.licence_ref,
-            parser_version=PARSER_VERSION,
-            available_at=self.retrieved_at,
-            available_at_is_fallback=True,
-            source_version=f"git:{self.revision}",
         )
 
     def _keys(self) -> list[str]:
@@ -387,16 +486,16 @@ class PholenkProvider:
         securities: list[Security] = []
         for key in self._keys():
             path = self._path(key)
-            rows = parse_file(path)
-            if not rows:
+            parsed, digest = self._read(path)
+            if not parsed.rows:
                 raise PholenkFormatError(f"{path.name}: no data rows")
-            newest = rows[0]
+            newest = parsed.rows[0]
             securities.append(
                 Security(
                     source_security_id=development_security_id(key),
                     ticker=key,
                     name=newest.values["Name"].strip() or None,
-                    provenance=self._provenance(path, key, newest.line),
+                    provenance=self._provenance(path, key, newest.line, digest),
                 )
             )
         return securities
@@ -409,7 +508,11 @@ class PholenkProvider:
         """
         key = source_key(source_security_id)
         path = self._path(key)
-        raw_rows = parse_file(path)
+        parsed, digest = self._read(path)
+        if parsed.malformed:
+            first = parsed.malformed[0]
+            raise PholenkFormatError(f"{path.name}#line={first.line}: {first.reason}")
+        raw_rows = parsed.rows
         mismatched = sum(1 for r in raw_rows if r.values["Ticker"].strip() != key)
         if mismatched:
             logger.warning(
@@ -420,7 +523,7 @@ class PholenkProvider:
                 mismatched,
             )
         return [
-            normalize_row(r, key=key, provenance=self._provenance(path, key, r.line))
+            normalize_row(r, key=key, provenance=self._provenance(path, key, r.line, digest))
             for r in raw_rows
         ]
 
@@ -467,6 +570,16 @@ class PholenkProvider:
 
 __all__ = [
     "DEV_ID_PREFIX",
+    "FLAG_NON_REGULAR_ACTIVITY",
+    "FLAG_TICKER_COLUMN_MISMATCH",
+    "FLAG_UNVERIFIED_TRADING_DATE",
+    "MalformedRow",
+    "ParsedStockFile",
+    "parse_bytes",
+    "read_manifest",
+    "record_provenance",
+    "row_quality_flags",
+    "ticker_case_mismatches",
     "EXPECTED_COLUMNS",
     "PARSER_VERSION",
     "SOURCE_ID",

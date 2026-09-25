@@ -92,9 +92,12 @@ def validate_daily_price(price: DailyPrice) -> tuple[ValidationIssue, ...]:
                 issues.append(_hard("high_below_open", f"high {h} < open {o}"))
             if o is not None and low > o:
                 issues.append(_hard("low_above_open", f"low {low} > open {o}"))
-    elif price.trading_status is TradingStatus.NO_TRADE_OR_SUSPENDED:
+    elif price.trading_status is TradingStatus.NO_REGULAR_MARKET_TRADE:
         issues.append(
-            _expected("no_trade_or_suspended", "zero-volume day; suspension not distinguishable")
+            _expected(
+                "no_regular_market_trade",
+                "no regular-market trade recorded; cause not stated by the source",
+            )
         )
     elif price.trading_status is TradingStatus.UNKNOWN:
         issues.append(_expected("unclassified_row", "trading status could not be determined"))
