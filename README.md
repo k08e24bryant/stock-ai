@@ -7,14 +7,18 @@ analysis into an **explainable** research assistant. It is explicitly *not* a
 black-box price predictor — see [CLAUDE.md](CLAUDE.md) for the full philosophy
 and [PROJECT_PLAN.md](PROJECT_PLAN.md) for the roadmap.
 
-> **Status: Phase 2A (Pholenk development ingestion) complete. 81 tests pass (38 at the end of Phase 0, 43 at the end of Phase 1).**
+> **Status: Phase 2B (development market-data persistence) complete.**
+> 163 tests pass. The development database holds the Pholenk snapshot
+> `9bb3b26`: 1,289,820 raw daily prices for 983 securities, 2020-01-02 →
+> 2026-05-29, loaded and verified on 2026-09-25.
 > PostgreSQL 17 and Redis 7 run in Docker and are reachable from the app.
-> **Phase 2 (market data) in progress.** $0 development mode: production
-> data is BLOCKED (no production provider selected); development data is
-> UNBLOCKED and read through the provider-neutral interface. Requirements, provider research, validation, and the
-> development source map are in [docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md).
-> No market-data persistence, valuation, technical, ML, backtesting, or
-> trading logic exists yet. Git state is recorded in [CONTEXT.md](CONTEXT.md).
+> **Phase 2 (market data) in progress.** $0 development mode: production data
+> is BLOCKED (no production provider selected), and development data is
+> UNBLOCKED. Requirements, provider research, validation, and the development
+> source map are in [docs/data_sources/market_data_requirements.md](docs/data_sources/market_data_requirements.md).
+> Prices are raw: there are no corporate actions or adjusted prices yet, and
+> no valuation, technical, ML, backtesting, or trading logic. Git state is
+> recorded in [CONTEXT.md](CONTEXT.md).
 
 ---
 
@@ -104,7 +108,12 @@ pytest -x -vv          # stop at first failure, verbose
 ```
 
 Tests marked `integration` talk to the local PostgreSQL and Redis and are
-**skipped** (reason shown in the summary) when those services are down:
+**skipped** (reason shown in the summary) when those services are down.
+Integration tests that write data never use the development database, which
+holds the loaded snapshot. They run in a throwaway database that the
+`migrated_database` fixture (`tests/conftest.py`) creates, migrates with
+Alembic, and drops. This needs a PostgreSQL role allowed to create databases;
+the local `stockai` role is.
 
 ```bash
 pytest -m integration        # only the live-service tests
@@ -135,9 +144,9 @@ alembic upgrade head                         # apply
 alembic downgrade -1                         # roll back one revision
 ```
 
-There are **no migrations yet**. The schema (CLAUDE.md §22) is designed
-incrementally from Phase 2 onward, so `--autogenerate` currently produces an
-empty migration — that is expected.
+One migration exists: `1c1d7048b74f`, the Phase 2B market-data schema (see
+[docs/data_sources/phase_2b_schema_design.md](docs/data_sources/phase_2b_schema_design.md)).
+`alembic check` should report no new upgrade operations.
 
 ---
 
@@ -157,13 +166,20 @@ docs/           project documentation (data_sources/: market-data requirements a
 tests/          pytest suite
 ```
 
-Implementation code so far: `backend/config.py` (environment-driven
-settings), `backend/database.py` (engine, session factory, connectivity
-check), `data/ingestion/provider.py` (provider-neutral market-data
-interface), `data/ingestion/pholenk.py` (development provider for the
-Pholenk/IDX-Dataset snapshot), and `data/validation/daily_prices.py`
-(validation and quality report). Every other package contains only a
-docstring stating its responsibility.
+Implementation code so far:
+
+* `backend/config.py`: environment-driven settings.
+* `backend/database.py`: engine, session factory, connectivity check.
+* `backend/models/`: the Phase 2B market-data tables.
+* `data/ingestion/provider.py`: the provider-neutral market-data interface.
+* `data/ingestion/pholenk.py`: the development provider for the
+  Pholenk/IDX-Dataset snapshot.
+* Snapshot loading: `data/ingestion/snapshot.py`, `loader.py`,
+  `pholenk_snapshot.py`, and the `load_snapshot.py` CLI.
+* `data/validation/daily_prices.py`: validation and the quality report.
+* `data/validation/verify_load.py`: read-only post-load verification.
+
+Every other package contains only a docstring stating its responsibility.
 
 ### Development market data (Pholenk snapshot)
 
@@ -181,6 +197,23 @@ Quality report for a snapshot:
 ```bash
 python -m data.ingestion.pholenk data/raw/pholenk/IDX-Dataset-9bb3b26
 ```
+
+Load it into PostgreSQL. The default is a dry run with no database access;
+`--execute` needs the **full** 40-hex `revision` from `manifest.json`:
+
+```bash
+python -m data.ingestion.load_snapshot pholenk data/raw/pholenk/IDX-Dataset-9bb3b26 --expect-stock-files 983
+python -m data.ingestion.load_snapshot pholenk data/raw/pholenk/IDX-Dataset-9bb3b26 --expect-stock-files 983     --execute --confirm-revision 9bb3b26bd28ab46bc2f3e74a7c03805ce053301b
+```
+
+Verify what is stored. This is read-only; `--deep` compares every row:
+
+```bash
+python -m data.validation.verify_load pholenk data/raw/pholenk/IDX-Dataset-9bb3b26 --expect-stock-files 983 --deep
+```
+
+See [docs/data_sources/phase_2b_ingestion_design.md](docs/data_sources/phase_2b_ingestion_design.md)
+for the design and the recorded load and verification results.
 
 Development data only; see `docs/data_sources/market_data_requirements.md` §36.
 

@@ -2,8 +2,9 @@
 
 Pure tests (identity, inventory, dry run, streaming, CLI safety) need no
 database. Database tests (marked ``integration``) run against a **throwaway
-database** created for this module and dropped afterwards, so the development
-database is never touched; tables are truncated between tests.
+database** migrated to ``head`` (the ``migrated_database`` fixture in
+``conftest.py``) and dropped afterwards, so the development database is never
+touched; tables are truncated between tests.
 
 Letters in section headers refer to the Phase 2B.3B test plan (A-J).
 """
@@ -11,23 +12,18 @@ Letters in section headers refer to the Phase 2B.3B test plan (A-J).
 from __future__ import annotations
 
 import json
-import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, create_engine, func, select, text
-from sqlalchemy.engine import make_url
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
 import data.ingestion.loader as loader_module
 import data.ingestion.snapshot as snapshot_module
-from backend.config import get_settings
-from backend.database import get_engine, ping_database
 from backend.models import (
     DailyPrice,
     DataQualityIncident,
@@ -36,7 +32,6 @@ from backend.models import (
     SecuritySourceKey,
     SourceFile,
     SourceSnapshot,
-    metadata,
 )
 from data.ingestion import load_snapshot
 from data.ingestion.loader import (
@@ -306,34 +301,11 @@ TABLES = (
 )
 
 
-@pytest.fixture(scope="module")
-def test_engine() -> Iterator[Engine]:
-    try:
-        ping_database()
-    except OperationalError as exc:
-        pytest.skip(f"PostgreSQL unreachable ({exc.orig.__class__.__name__})")
-    name = f"stockai_loader_test_{uuid.uuid4().hex[:12]}"
-    with get_engine().connect() as admin:
-        admin.execution_options(isolation_level="AUTOCOMMIT").execute(
-            text(f'CREATE DATABASE "{name}"')
-        )
-    engine = create_engine(make_url(get_settings().database_url).set(database=name))
-    try:
-        metadata.create_all(engine)
-        yield engine
-    finally:
-        engine.dispose()
-        with get_engine().connect() as admin:
-            admin.execution_options(isolation_level="AUTOCOMMIT").execute(
-                text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
-            )
-
-
 @pytest.fixture
-def engine(test_engine: Engine) -> Engine:
-    with test_engine.begin() as conn:
+def engine(migrated_database: Engine) -> Engine:
+    with migrated_database.begin() as conn:
         conn.execute(text(f"TRUNCATE {TABLES} RESTART IDENTITY"))
-    return test_engine
+    return migrated_database
 
 
 def load(engine: Engine, root: Path, revision: str = REVISION) -> LoadResult:

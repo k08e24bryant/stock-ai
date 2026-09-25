@@ -123,7 +123,9 @@ rolled-back transactions, and PostgreSQL sequences do not roll back. The
 determinism in §3 therefore covers the assignment *order*, not the absolute ID
 values. Those tests use their own `test-source` and cannot collide with the
 loaded rows. Moving them to a throwaway database, as the loader tests already
-do, is an open follow-up.
+do, was an open follow-up. It was done in Phase 2B.4: every writing
+integration test now uses the `migrated_database` fixture, and `pytest` leaves
+the development database, sequences included, unchanged.
 
 ---
 
@@ -484,8 +486,9 @@ with **zero database writes**.
   sorted order.
 * **`--compare-db` (optional; not implemented in Phase 2B.3B, deferred):**
   opens a `READ ONLY` transaction. PostgreSQL forbids `CREATE`, even of
-  temporary tables, in such a transaction, so no staging table is used. Instead the dry run SELECTs the existing mappings and,
-  per security, the stored observations, then applies the §9 comparison rule
+  temporary tables, in such a transaction, so no staging table is used.
+  Instead the dry run SELECTs the existing mappings and, per security, the
+  stored observations, then applies the §9 comparison rule
   in Python (same compared columns, NULL-safe, numeric by value, flags as
   sorted sets). It reports would-be new / unchanged / conflict counts. The
   offline mode remains the reference output.
@@ -528,10 +531,35 @@ top):
 | No adjusted semantics | `daily_prices` has no adjustment columns (schema); spot check BBCA 2021-10-12 close 36,600 and 2021-10-13 close 7,525 (raw split visible) | holds |
 | Securities identity | `SELECT count(*) FROM securities WHERE identity_kind <> 'development'` | 0 |
 
-These checks are planned as an automated verification command. It prints each
-check, its expected value, and its actual value, and exits non-zero on any
-mismatch. The command is **not implemented in Phase 2B.3B**; until it exists,
-the SQL above is run manually after a load.
+These checks are automated (Phase 2B.4) by a read-only verification command:
+
+```
+python -m data.validation.verify_load pholenk data/raw/pholenk/IDX-Dataset-9bb3b26 --expect-stock-files 983 [--deep] [--report PATH]
+```
+
+* **Expected values** are computed from the snapshot itself, with the
+  loader's own pass 1 and pass 2 and no database access. No count from the
+  table above is hard-coded.
+* **The database** is read in one `REPEATABLE READ, READ ONLY` transaction.
+  The command reports the session's read-only setting as a check of its own.
+* **Checks:** snapshot and file registration against the files on disk; the
+  run (a successful run, the latest `rows_seen`, no stale `running` run, the
+  counter invariant); the source-key set and key flags; price counts, statuses,
+  flags, rows with several flags, missing opens, zero volume, date range, and
+  per-file row counts; the expected incidents (by fingerprint); and the
+  integrity rules (duplicates, OHLC, sign, status, flag vocabulary and order,
+  provenance consistency, identity, adjustment columns).
+* **`--deep`** also compares every stored row with the snapshot: observation
+  and provenance, plus missing and extra rows.
+* **Output:** each check prints its expected and actual value. The command
+  exits 0 when every check passes, 1 on any mismatch, and 2 on a structural
+  error.
+* **Limitation:** source-level counts assume the source's rows were loaded
+  from this one snapshot. With several snapshots of one source they differ
+  legitimately; only the snapshot that loaded the rows verifies cleanly.
+
+On the development database (2026-09-25), 47 of 47 checks passed, and 51 of
+51 with `--deep`.
 
 ## 14. Re-run verification
 
@@ -572,7 +600,8 @@ Loading the same snapshot again with the same parser version must give:
 
 Items 1–4 were implemented in Phase 2B.3B, except for the parts marked "not
 yet built" and a dedicated DB-CHECK parity test. The fixture loads exercise
-the CHECK constraints but do not enumerate them. Item 5 remains open.
+the CHECK constraints but do not enumerate them. Item 5 and the §13
+verification command were completed in Phase 2B.4.
 
 Changes the loader needs in existing code:
 
@@ -589,8 +618,8 @@ Changes the loader needs in existing code:
    * the Phase 2A deterministic run id is replaced by `snapshot_id` plus a
      UUID run.
 3. **A loader module and CLI** (dry run by default; `--execute`,
-   `--confirm-revision`, `--expect-stock-files`). Not yet built:
-   `--compare-db` and the verification command from §13.
+   `--confirm-revision`, `--expect-stock-files`). The verification command
+   from §13 was added in Phase 2B.4. Not yet built: `--compare-db`.
 4. **Tests on small fixtures and an ephemeral transaction/database:**
    * first load;
    * identical rerun (0 inserted, 0 incidents);

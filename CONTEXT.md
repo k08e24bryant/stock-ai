@@ -3,9 +3,10 @@
 Current state of the repository. Update this whenever a phase completes or a
 significant decision is made.
 
-**Last updated:** 2026-09-24
+**Last updated:** 2026-09-25
 **Current phase:** Phase 2 — Market data, **in progress**. Phase 2A (Pholenk
-development ingestion) is complete; persistence is next.
+development ingestion) and Phase 2B (development persistence: data contract,
+schema, snapshot loader, real load, and post-load verification) are complete.
 **Mode:** **$0 development mode** (2026-09-24). Production data is **BLOCKED**
 on Q2 (no production provider selected; production licensing unresolved;
 doc §32). Development data is **UNBLOCKED**: public development sources are
@@ -30,29 +31,29 @@ file wherever they disagree.
 
 ## 2. What exists right now
 
-Infrastructure plus a file-based development market-data provider. **No
-analytical code has been written.** There is no persistence of market data, no
-valuation model, no technical indicator, no NLP, no ML, no backtester, and no
-dashboard.
+Infrastructure, a file-based development market-data provider, and
+PostgreSQL persistence of raw development daily prices. **No analytical code
+has been written.** There are no corporate actions or adjusted prices, and no
+valuation model, technical indicator, NLP, ML, backtester, or dashboard.
 
 | Area | State |
 | --- | --- |
 | Git repository | Branch `main`; see *Git state* below |
 | Python environment | `.venv` on Python 3.13.15 |
-| Package layout | All packages from CLAUDE.md §25 created. Implementation code: `backend/config.py`, `backend/database.py`, the provider-neutral interface `data/ingestion/provider.py`, the Pholenk development provider `data/ingestion/pholenk.py`, and daily-price validation/reporting `data/validation/daily_prices.py`. Every other package is a docstring-only placeholder |
+| Package layout | All packages from CLAUDE.md §25 created. Implementation code: `backend/config.py`, `backend/database.py`, `backend/models/` (Phase 2B tables), the provider-neutral interface `data/ingestion/provider.py`, the Pholenk development provider `data/ingestion/pholenk.py`, the snapshot loader (`data/ingestion/snapshot.py`, `loader.py`, `pholenk_snapshot.py`, CLI `load_snapshot.py`), daily-price validation/reporting `data/validation/daily_prices.py`, and read-only post-load verification `data/validation/verify_load.py`. Every other package is a docstring-only placeholder |
 | Configuration | `backend/config.py` — env-driven `Settings` (Pydantic) |
-| Database | `backend/database.py` engine/session factory; Alembic connects; **zero migrations, zero tables** |
+| Database | One migration, `1c1d7048b74f` (8 Phase 2B tables). The development database holds Pholenk snapshot `9bb3b26`: 1,289,820 `daily_prices`, 983 securities, 1,043 source files, 1 ingestion run, 1 expected incident (loaded 2026-09-25; verified 47/47, and 51/51 with `--deep`) |
 | Infrastructure | PostgreSQL 17.11 + Redis 7.4.11 via Docker Compose, both healthy |
-| Tests | 81 passing (78 unit + 3 `integration` against live services). Phase 0 ended with 38; Phase 1 with 43. |
+| Tests | 163 passing. Integration tests that write data use a throwaway database (`migrated_database` fixture), so `pytest` leaves the development database unchanged. Phase 0 ended with 38 tests, Phase 1 with 43, and Phase 2A with 81. |
 | Frontend | `dashboard/` is an empty placeholder |
 
-### Git state (snapshot, 2026-09-24)
+### Git state (snapshot, 2026-09-25)
 
 | Item | State |
 | --- | --- |
 | Branch | `main` |
-| Commits on `origin/main` | `dff5641` Initial commit → `41f70b5` phase 1 completed → `237878c` docs: reconcile phase 0 and phase 1 documentation → `e6842ea` docs: finalize market data requirements → `a2beb24` docs: validate market data sources |
-| Local commits after `a2beb24` | Not pushed; list with `git log origin/main..HEAD` |
+| Commits on `origin/main` | … → `e6842ea` docs: finalize market data requirements → `a2beb24` docs: validate market data sources → `823920c` docs: establish zero-cost development data sources → `5014325` feat: add Pholenk development market data provider |
+| Local commits after `5014325` | Not pushed (Phase 2B.2 onward); list with `git log origin/main..HEAD` |
 
 This snapshot goes stale on every commit or push — update it when either happens.
 
@@ -124,9 +125,18 @@ phase begins.
 | D17 | $0 development mode: build on public development data now; production provider selection deferred | Production requirements stay unchanged; development sources (doc §36) are not declared to satisfy them. |
 | D18 | Provider-agnostic architecture: all market data goes through `MarketDataProvider` with provenance on every record | Lets a production source replace development sources without downstream changes. |
 | D19 | Core development OHLCV source: Pholenk/IDX-Dataset (ODbL; 2020-01-02 → 2026-05-29), with supplemental sources in doc §36.7 | Only full-universe raw IDX-format source found with an explicit open-data licence. Development only. |
-| D20 | Source `Open = 0` → `open = None`; zero-volume rows with `High = Low = 0` → `NO_TRADE_OR_SUSPENDED` (kept, never dropped) | The source supplies no open on most rows and does not distinguish suspension from no trading; nothing is fabricated. |
+| D20 | Source `Open = 0` → `open = None`; zero-volume rows with `High = Low = 0` → `NO_TRADE_OR_SUSPENDED` (kept, never dropped). *Status renamed by D23.* | The source supplies no open on most rows and does not distinguish suspension from no trading; nothing is fabricated. |
 | D21 | Development identity `dev:pholenk-idx-dataset:<KEY>` | No stable ID in the source; explicitly not an ISIN and not stable across ticker changes. |
-| D22 | Phase 2A adds no database tables | Canonical records are produced in memory; persistence is the next, separate step. |
+| D22 | Phase 2A adds no database tables | Canonical records are produced in memory; persistence is the next, separate step. *Superseded by Phase 2B (D23–D26).* |
+
+### Phase 2B (development persistence, 2026-09-24 → 2026-09-25)
+
+| # | Decision | Reason |
+| --- | --- | --- |
+| D23 | Data contract ([phase_2b_data_contract.md](docs/data_sources/phase_2b_data_contract.md)): regular-market data only; statuses `traded` / `no_regular_market_trade` / `unknown`; source `Previous` → `reference_price`; `available_at` unknown (never retrieval time); documented quality flags only | The source cannot establish suspensions, a prior close, or historical availability; nothing is inferred. |
+| D24 | Snapshot identity = source + full revision + content hash; one unique run per execution; `parser_version` on the run | Reloading identical content is recognisable and idempotent; retrieval time is not identity. |
+| D25 | `daily_prices` holds raw observations only; never overwritten; conflicts become incidents; every row traces to file, line, and run | Raw is immutable and auditable; adjustments come later in separate tables. |
+| D26 | Real loads need `--execute` plus the exact full manifest revision; post-load state is checked by the read-only `verify_load` command; tests that write use a throwaway database | Prevents accidental writes and keeps the development database's evidence (and sequences) untouched. |
 
 Proposed in the requirements doc but **not yet adopted**: the per-field
 source-precedence rule (§21), the total-return convention — gross dividends
@@ -137,7 +147,8 @@ published method (§24) — and the rights-issue methodology (§25).
 
 ## 6. Deliberately NOT done
 
-* No database schema. Table design begins in Phase 2, group by group.
+* No corporate actions, dividends, adjusted prices, or total return
+  (Phase 2B non-goals); `daily_prices` is raw only.
 * No network data client and no scraper; the only provider reads a local, git-ignored file snapshot.
 * No ML, no NLP models, no feature engineering.
 * No FastAPI application object or routes.

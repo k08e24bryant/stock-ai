@@ -467,7 +467,8 @@ class ObservationStats:
         }
 
 
-def _key_incidents(prepared: PreparedSnapshot) -> list[IncidentDraft]:
+def key_incidents(prepared: PreparedSnapshot) -> list[IncidentDraft]:
+    """Security-level incidents implied by pass 1 (ticker-column mismatches)."""
     return [
         IncidentDraft(
             FLAG_TICKER_COLUMN_MISMATCH,
@@ -504,7 +505,7 @@ def dry_run(prepared: PreparedSnapshot) -> dict[str, Any]:
         securities_created=len(prepared.keys), securities_resolved=len(prepared.keys)
     )
     stats = ObservationStats()
-    incidents = _key_incidents(prepared)
+    incidents = key_incidents(prepared)
     rejected_keys: list[str] = []
     for outcome in iter_file_outcomes(prepared):
         counters.files_processed += 1
@@ -750,7 +751,7 @@ class SnapshotLoader:
         source_id = prepared.source.source_id
         counters = Counters()
         security_ids = self._resolve_securities(conn, prepared, counters)
-        drafts = _key_incidents(prepared)
+        drafts = key_incidents(prepared)
         self._flag_source_keys(conn, prepared)
 
         conn.execute(
@@ -1109,6 +1110,7 @@ __all__ = [
     "advisory_lock_key",
     "dry_run",
     "iter_file_outcomes",
+    "key_incidents",
     "prepare_snapshot",
     "process_file",
     "report_json",

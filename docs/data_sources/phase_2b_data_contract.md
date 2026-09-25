@@ -11,10 +11,24 @@ Decision record for persisting daily market data in Phase 2B.
 
 ## Status
 
-**APPROVED FOR IMPLEMENTATION.** All three blocking decisions are resolved
-below. Implementation has **not** started; this record changes no code, schema,
-or tests. The code changes it requires are listed under
+**APPROVED AND IMPLEMENTED.** All three blocking decisions are resolved below.
+They were implemented in Phase 2B.2 (schema, migration `1c1d7048b74f`) and
+Phase 2B.3 (loader). The Pholenk snapshot `9bb3b26` was loaded into the
+development database on 2026-09-25 (see the
+[ingestion design](phase_2b_ingestion_design.md)). The code changes this
+record required are listed, all done, under
 [Required implementation changes](#required-implementation-changes).
+
+**Amended 2026-09-25 (Phase 2B.4).** The approved
+[schema design](phase_2b_schema_design.md#contract-alignment) refined this
+contract in three points, and the text below reflects them:
+
+1. `parser_version` belongs to the **ingestion run**, not the snapshot: it
+   describes our code, not the dataset.
+2. Canonical rows reference their file (and so their snapshot) **and** the
+   run that inserted them. The run is the path to the parser version.
+3. `price_basis` is implicit (raw) rather than a column, because the
+   daily-price table holds raw observations only.
 
 ## Scope
 
@@ -103,11 +117,13 @@ requirements document (temporal semantics, §22), this contract applies.
 * One run = one execution of the loader. Every execution gets a new, unique
   `ingestion_run_id` (e.g. a UUID); run IDs are **not** deterministic.
 * Run metadata: `ingestion_run_id`, `snapshot_id`, `started_at`,
-  `completed_at`, `status` (`running` / `succeeded` / `failed`), `rows_seen`,
-  `rows_accepted` (inserted + already present and identical), `rows_rejected`,
-  and a validation summary.
-* Canonical rows reference their **snapshot** (what they came from). The run
-  is an audit record of the load.
+  `completed_at`, `status` (`running` / `succeeded` / `failed`),
+  `parser_version`, the row counters `rows_seen`, `rows_inserted`,
+  `rows_unchanged` (already present and identical; inserted + unchanged =
+  accepted), `rows_rejected`, `rows_conflicted`, and a validation summary.
+* Canonical rows reference their **snapshot** through their source file (what
+  they came from), and the run that inserted them. The run is otherwise an
+  audit record of the load.
 * Phase 2A's deterministic `ingestion_run_id`
   (`pholenk-idx-dataset@<revision>@<retrieved_at>`) is in effect a snapshot
   label; it is replaced by the split above.
@@ -252,9 +268,10 @@ are added only for observed conditions and must be documented here.
 
 | Level | Contents |
 | --- | --- |
-| Snapshot | `source_id`, `source_revision`, `content_sha256`, `archive_sha256`, `retrieved_at`, licence reference, parser version, source URL, raw storage path |
+| Snapshot | `source_id`, `source_revision`, `content_sha256`, `archive_sha256`, `retrieved_at`, licence reference, source URL, raw storage path |
+| Ingestion run | `ingestion_run_id`, parser version, timestamps, status, counters |
 | File | relative path, file SHA-256, row count, source key |
-| Row | file reference, source line, quality flags |
+| Row | file reference, source line, inserting run, quality flags |
 
 * Raw files remain **outside PostgreSQL**; no raw CSV blobs are stored.
 * A canonical row is reproduced as: row → file (path + SHA-256) → snapshot
@@ -278,7 +295,10 @@ Principles only; no schema is defined here.
 5. **Ingestion runs are unique** per execution (Decision 2).
 6. **Loading is idempotent.** Re-loading a snapshot changes no canonical rows.
    The natural key of a daily observation is
-   (`source_id`, `security_id`, `trading_date`, `price_basis`).
+   (`source_id`, `security_id`, `trading_date`, `price_basis`). The
+   daily-price table holds raw observations only, so `price_basis` is
+   implicit and the stored key is (`source_id`, `security_id`,
+   `trading_date`).
 7. **No silent overwrite.** Exact duplicates are deduplicated. Conflicting
    observations — within a snapshot or across snapshots — are never silently
    overwritten: the existing value stays, the conflict is recorded as a
@@ -292,15 +312,16 @@ Principles only; no schema is defined here.
 
 ## Required implementation changes
 
-To be made **as part of Phase 2B implementation**, not by this record:
+To be made **as part of Phase 2B implementation**, not by this record. **All
+done** in Phase 2B.2–2B.3:
 
 * `TradingStatus`: replace `NO_TRADE_OR_SUSPENDED` with
   `NO_REGULAR_MARKET_TRADE`; stop producing `NO_TRADES` / `SUSPENDED` from
   this source.
 * `DailyPrice.previous_close` → `reference_price`.
 * Provenance: stop presenting `retrieved_at` as `available_at`; represent
-  unknown availability explicitly. Move `retrieved_at`, licence, parser
-  version, and revision to snapshot level.
+  unknown availability explicitly. Move `retrieved_at`, licence, and revision
+  to snapshot level, and parser version to the ingestion run.
 * Replace the deterministic Phase 2A `ingestion_run_id` with `snapshot_id`
   (deterministic) plus a per-execution `ingestion_run_id`.
 * Compute file hashes from the parsed bytes; build and verify the file

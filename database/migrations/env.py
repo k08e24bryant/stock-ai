@@ -15,7 +15,7 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import Connection, engine_from_config, pool
 
 from backend.config import get_settings
 from backend.models import metadata
@@ -49,8 +49,30 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _run_with(connection: Connection) -> None:
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
 def run_migrations_online() -> None:
-    """Connect to the database and run migrations in a transaction."""
+    """Connect to the database and run migrations in a transaction.
+
+    A caller may supply its own connection in ``config.attributes["connection"]``
+    (Alembic's documented pattern for programmatic use). Tests use this to
+    migrate a throwaway database instead of the configured one. The command
+    line never sets it, so the CLI always uses the URL from the settings.
+    """
+    supplied = config.attributes.get("connection")
+    if supplied is not None:
+        _run_with(supplied)
+        return
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -58,14 +80,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
-
-        with context.begin_transaction():
-            context.run_migrations()
+        _run_with(connection)
 
 
 if context.is_offline_mode():

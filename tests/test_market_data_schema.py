@@ -1,10 +1,11 @@
 """Phase 2B.2 schema tests: model metadata and database-level constraints.
 
 Metadata tests need no database. Constraint tests are marked ``integration``:
-they run against the configured PostgreSQL (migrated to ``head``) inside a
-transaction that is always rolled back, so no data is left behind. Each
-expected failure runs in its own savepoint and asserts *which* constraint
-fired.
+they run against a throwaway database migrated to ``head`` by the real
+migration (the ``migrated_database`` fixture in ``conftest.py``), never the
+development database. Each test runs inside a transaction that is always
+rolled back, and each expected failure runs in its own savepoint and asserts
+*which* constraint fired.
 """
 
 from __future__ import annotations
@@ -13,16 +14,12 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 import pytest
-from alembic import command
-from alembic.config import Config
-from sqlalchemy import Connection, Float, Numeric, delete, insert, select
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy import Connection, Engine, Float, Numeric, delete, insert, select
+from sqlalchemy.exc import IntegrityError
 
-from backend.database import get_engine, ping_database
 from backend.models import (
     DailyPrice,
     DataQualityIncident,
@@ -112,24 +109,10 @@ def test_minimal_indexes() -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def migrated() -> Iterator[None]:
-    try:
-        ping_database()
-    except OperationalError as exc:
-        pytest.skip(
-            f"PostgreSQL unreachable ({exc.orig.__class__.__name__}); run `docker compose up -d`"
-        )
-    root = Path(__file__).resolve().parents[1]
-    command.upgrade(Config(str(root / "alembic.ini")), "head")
-    yield
-    get_engine().dispose()
-
-
 @pytest.fixture
-def conn(migrated: None) -> Iterator[Connection]:
+def conn(migrated_database: Engine) -> Iterator[Connection]:
     """A connection whose outer transaction is always rolled back."""
-    with get_engine().connect() as connection:
+    with migrated_database.connect() as connection:
         transaction = connection.begin()
         try:
             yield connection

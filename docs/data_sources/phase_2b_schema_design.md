@@ -2,8 +2,9 @@
 
 ## Status
 
-**DESIGN REVIEW** — not implemented. No models, tables, or migrations exist.
-Date: 2026-09-24. Target stack (verified): PostgreSQL 17.11, SQLAlchemy 2.0.54,
+**IMPLEMENTED** in Phase 2B.2 (commit `94dc6eb`, migration `1c1d7048b74f`).
+The Pholenk development snapshot was loaded in Phase 2B.3D (2026-09-25). Design
+date: 2026-09-24. Target stack (verified): PostgreSQL 17.11, SQLAlchemy 2.0.54,
 Alembic 1.20.0, psycopg 3.3.6.
 
 Governing documents: [Phase 2B Data Contract](phase_2b_data_contract.md)
@@ -478,8 +479,8 @@ Details that a flag cannot carry, such as the raw ticker `True`, go to
 ## Contract alignment
 
 This design refines the approved contract in three points. They take effect
-**with approval of this design**; the contract text should be updated
-accordingly in Phase 2B.2.
+**with approval of this design**. The contract text was updated accordingly in
+Phase 2B.4.
 
 1. **`parser_version` moves from snapshot level to `ingestion_runs`.** It
    describes our code, not the dataset. The same snapshot parsed by two

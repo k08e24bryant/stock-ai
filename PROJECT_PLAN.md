@@ -143,14 +143,16 @@ does not block Phase 2, and checks run locally in the meantime.
 
 **Goal:** a reproducible, corporate-action-correct daily OHLCV history.
 
-Phase 2A (development ingestion from Pholenk/IDX-Dataset) is complete. No
-database table, migration, network client, or scheduled job exists yet.
+Phase 2A (development ingestion from Pholenk/IDX-Dataset) and Phase 2B
+(PostgreSQL persistence of raw development daily prices) are complete. No
+network client, scheduled job, corporate-action layer, or adjusted price
+series exists yet.
 
 | Track | Status |
 | --- | --- |
 | Production data | **BLOCKED** — Q2 unresolved; readiness gate in requirements doc §32 |
 | Development data | **UNBLOCKED** — $0 development mode; public sources selected (requirements doc §36) |
-| Implementation | **IN PROGRESS** — Phase 2A complete on development data, through the provider-neutral interface only |
+| Implementation | **IN PROGRESS**: Phase 2A and Phase 2B complete on development data |
 
 Production provider selection remains a later, separate gate. Development
 data does not satisfy production requirements and must not be treated as if
@@ -216,8 +218,9 @@ partially ready; the provenance design is ready.
 * [x] Minimal provider-neutral interface `MarketDataProvider` with provenance
       on every record (`data/ingestion/provider.py`); no provider implemented.
 * [x] Development provider for the core source — Phase 2A below.
-* [ ] Next: persistence (raw layer + canonical daily prices) and the tables
-      below, still on development data.
+* [x] Persistence of raw daily prices on development data (Phase 2B below).
+* [ ] Next: the remaining tables and jobs below (corporate actions, adjusted
+      series, universe), still on development data.
 
 Known development-data gaps: raw IDX-format history starts 2019-07/2020-01
 (not 2015); opens are mostly missing before 2025; no ticker history, ISINs,
@@ -263,6 +266,38 @@ the two IDX-format sources (requirements doc §36.5).
 Not done in Phase 2A (by design): other datasets, cross-source
 reconciliation, corporate-action/dividend handling, price adjustment,
 persistence, scheduling.
+
+### Phase 2B — development persistence — STATUS: COMPLETE (2026-09-25)
+
+`snapshot → inventory + identity → loader (dry run / confirmed load) → PostgreSQL → read-only verification`
+
+* [x] Data contract
+      ([docs/data_sources/phase_2b_data_contract.md](docs/data_sources/phase_2b_data_contract.md)):
+      regular-market semantics, statuses `traded` /
+      `no_regular_market_trade` / `unknown`, `reference_price`,
+      unknown `available_at`, quality flags, snapshot vs run identity.
+* [x] 2B.1–2B.2 Schema
+      ([phase_2b_schema_design.md](docs/data_sources/phase_2b_schema_design.md)):
+      8 tables, migration `1c1d7048b74f`. `daily_prices` is raw only, has
+      CHECK-enforced semantics, and every foreign key is RESTRICT.
+* [x] 2B.3A–B Snapshot loader
+      ([phase_2b_ingestion_design.md](docs/data_sources/phase_2b_ingestion_design.md)):
+      deterministic snapshot identity; streaming COPY into staging;
+      idempotent, conflict-detecting, atomic load; the source advisory lock;
+      a database-free dry run by default; real loads need the full revision.
+* [x] 2B.3C Real-snapshot dry run: byte-identical, database-free, every
+      expectation matched.
+* [x] 2B.3D Real load (2026-09-25): 1,289,820 raw daily prices, 983
+      securities, 1,043 source files, 0 rejected, 0 conflicts. Verified
+      against the raw CSV row by row.
+* [x] 2B.4 Closeout: read-only verification command
+      `python -m data.validation.verify_load` (47/47 checks, 51/51 with
+      `--deep`); integration tests that write moved to a throwaway database;
+      contract text aligned with the schema.
+
+Not done in Phase 2B (by design): corporate actions, adjusted prices, total
+return, stable production IDs, ticker/name history, authoritative suspensions
+or trading calendar, backtesting (contract, "Explicit Non-Goals").
 
 ### Implementation (tables and jobs — start on development data; production source later)
 
