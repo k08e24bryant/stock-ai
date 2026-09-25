@@ -498,6 +498,14 @@ Documentation only; no tables are defined here.
 Rationale: CLAUDE.md §15 (time semantics), §16 (survivorship), invariant 6
 (raw vs derived), and the multi-source rules in §7.
 
+**Superseded for daily prices by the
+[Phase 2B Data Contract](phase_2b_data_contract.md) (2026-09-24):** the
+`available_at` fallback to `retrieved_at` is not used — historical availability
+is recorded as unknown unless an authoritative timestamp exists; `retrieved_at`
+and licence/parser metadata live at snapshot level; rows reference a
+deterministic snapshot, while `ingestion_run_id` identifies each loader
+execution.
+
 ---
 
 ## 23. Disagreement handling

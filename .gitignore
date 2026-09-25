@@ -75,7 +75,7 @@ logs/
 *.log
 
 # Model artifacts / experiment tracking
-models/
+/models/
 mlruns/
 *.pkl
 *.joblib

@@ -112,11 +112,22 @@ def test_settings_read_from_environment(monkeypatch: pytest.MonkeyPatch) -> None
     assert "s3cret" in settings.database_url
 
 
-def test_orm_metadata_is_empty_in_phase_0() -> None:
-    """No schema is designed yet; this test must be updated in Phase 2."""
+def test_orm_metadata_contains_exactly_the_phase_2b_tables() -> None:
+    """Tripwire: adding or removing a table must be a deliberate, reviewed change.
+
+    Phase 0 asserted an empty schema; Phase 2B.2 introduced the approved
+    market-data tables (docs/data_sources/phase_2b_schema_design.md).
+    """
     from backend.models import Base, metadata
 
     assert Base.metadata is metadata
-    assert metadata.tables == {}, (
-        "Tables exist now -- update this assertion and design migrations deliberately."
-    )
+    assert set(metadata.tables) == {
+        "data_sources",
+        "source_snapshots",
+        "source_files",
+        "ingestion_runs",
+        "securities",
+        "security_source_keys",
+        "daily_prices",
+        "data_quality_incidents",
+    }, "Schema changed -- update this assertion and write a reviewed migration."
