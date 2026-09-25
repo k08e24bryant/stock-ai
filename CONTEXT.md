@@ -8,7 +8,8 @@ significant decision is made.
 development ingestion) and Phase 2B (development persistence: data contract,
 schema, snapshot loader, real load, and post-load verification) are complete.
 Phase 2C (corporate actions, dividends, adjustment factors, adjusted series)
-is implemented and loaded on development data, pending review.
+is complete. Phase 2D (market indices, observed trading calendar) is
+implemented and loaded, pending review.
 **Mode:** **$0 development mode** (2026-09-24). Production data is **BLOCKED**
 on Q2 (no production provider selected; production licensing unresolved;
 doc §32). Development data is **UNBLOCKED**: public development sources are
@@ -44,9 +45,9 @@ valuation model, technical indicator, NLP, ML, backtester, or dashboard.
 | Python environment | `.venv` on Python 3.13.15 |
 | Package layout | All packages from CLAUDE.md §25 created. Implementation code: `backend/config.py`, `backend/database.py`, `backend/models/` (Phase 2B tables), the provider-neutral interface `data/ingestion/provider.py`, the Pholenk development provider `data/ingestion/pholenk.py`, the snapshot loader (`data/ingestion/snapshot.py`, `loader.py`, `pholenk_snapshot.py`, CLI `load_snapshot.py`), daily-price validation/reporting `data/validation/daily_prices.py`, and read-only post-load verification `data/validation/verify_load.py`. Every other package is a docstring-only placeholder |
 | Configuration | `backend/config.py` — env-driven `Settings` (Pydantic) |
-| Database | One migration, `1c1d7048b74f` (8 Phase 2B tables). The development database holds Pholenk snapshot `9bb3b26`: 1,289,820 `daily_prices`, 983 securities, 1,043 source files, 1 ingestion run, 1 expected incident (loaded 2026-09-25; verified 47/47, and 51/51 with `--deep`). Phase 2C (migration `55a78b2c9066`): 1,652 corporate-action events (DS-9), 5,934 cash dividends (DS-7), and factor build `d1daa2d6` (212 applied price factors, 2,202 dividend factors, 18 reference-price anomaly dates) |
+| Database | One migration, `1c1d7048b74f` (8 Phase 2B tables). The development database holds Pholenk snapshot `9bb3b26`: 1,289,820 `daily_prices`, 983 securities, 1,043 source files, 1 ingestion run, 1 expected incident (loaded 2026-09-25; verified 47/47, and 51/51 with `--deep`). Phase 2C (migration `55a78b2c9066`): 1,652 corporate-action events (DS-9), 5,934 cash dividends (DS-7), and factor build `d1daa2d6` (212 applied price factors, 2,202 dividend factors, 18 reference-price anomaly dates). Phase 2D (migration `6117977fb001`): 63,919 index values (56 indices incl. IHSG `COMPOSITE`) and the `observed_trading_days` view (1,540 dates; 3 missing from the stock data) |
 | Infrastructure | PostgreSQL 17.11 + Redis 7.4.11 via Docker Compose, both healthy |
-| Tests | 186 passing. Integration tests that write data use a throwaway database (`migrated_database` fixture), so `pytest` leaves the development database unchanged. Phase 0 ended with 38 tests, Phase 1 with 43, and Phase 2A with 81. |
+| Tests | 195 passing. Integration tests that write data use a throwaway database (`migrated_database` fixture), so `pytest` leaves the development database unchanged. Phase 0 ended with 38 tests, Phase 1 with 43, and Phase 2A with 81. |
 | Frontend | `dashboard/` is an empty placeholder |
 
 ### Git state (snapshot, 2026-09-25)

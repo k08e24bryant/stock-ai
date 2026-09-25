@@ -68,8 +68,10 @@ from data.ingestion.loader import (
 )
 from data.ingestion.records import (
     PreparedRecordSnapshot,
+    freeze,
     prepare_record_snapshot,
     process_records,
+    provenance_value,
 )
 from data.ingestion.snapshot import InventoryEntry, SnapshotManifest, StructuralError
 
@@ -327,7 +329,19 @@ class _Snapshot(Protocol):
     def snapshot_id(self) -> str: ...
 
 
-def _check_registration(conn: Connection, prepared: _Snapshot, report: VerificationReport) -> bool:
+def _check_registration(
+    conn: Connection,
+    prepared: _Snapshot,
+    report: VerificationReport,
+    counted: Iterable[str] | None = None,
+) -> bool:
+    """Snapshot, file inventory, and run checks.
+
+    Every file's identity (path + SHA-256) is compared. Row counts and source
+    keys are compared only for `counted` paths (default: all). A snapshot
+    shared by several adapters (prices and indices of one Pholenk snapshot)
+    is counted differently by each adapter.
+    """
     snap = (
         conn.execute(
             text(
@@ -347,7 +361,7 @@ def _check_registration(conn: Connection, prepared: _Snapshot, report: Verificat
     report.add("snapshot", "content_sha256", prepared.content_sha256, snap["content_sha256"])
     report.add("snapshot", "file_count", len(prepared.entries), snap["file_count"])
     stored = {
-        (path, digest, rows, key)
+        path: (digest, rows, key)
         for path, digest, rows, key in conn.execute(
             text(
                 "SELECT relative_path, sha256, row_count, source_key FROM source_files "
@@ -356,9 +370,17 @@ def _check_registration(conn: Connection, prepared: _Snapshot, report: Verificat
             {"sid": prepared.snapshot_id},
         )
     }
-    expected = {(e.relative_path, e.sha256, e.row_count, e.source_key) for e in prepared.entries}
+    expected = {e.relative_path: (e.sha256, e.row_count, e.source_key) for e in prepared.entries}
+    identity = {(p, v[0]) for p, v in expected.items()} ^ {(p, v[0]) for p, v in stored.items()}
     report.add("files", "registered", len(expected), len(stored))
-    report.add("files", "differing_from_disk", 0, len(expected ^ stored))
+    report.add("files", "differing_from_disk", 0, len(identity))
+    paths = set(expected) if counted is None else set(counted)
+    report.add(
+        "files",
+        "row_count_or_key_differs",
+        0,
+        sum(1 for p in paths if stored.get(p, (None,))[1:] != expected[p][1:]),
+    )
     succeeded = _scalar(
         conn,
         "SELECT count(*) FROM ingestion_runs WHERE snapshot_id = :sid AND status = 'succeeded'",
@@ -472,9 +494,10 @@ def _check_latest_run(
     seen = conn.execute(
         text(
             "SELECT rows_seen FROM ingestion_runs WHERE snapshot_id = :sid "
-            "AND status = 'succeeded' ORDER BY completed_at DESC LIMIT 1"
+            "AND status = 'succeeded' AND parser_version = :pv "
+            "ORDER BY completed_at DESC LIMIT 1"
         ),
-        {"sid": prepared.snapshot_id},
+        {"sid": prepared.snapshot_id, "pv": prepared.source.parser_version},
     ).scalar_one_or_none()
     report.add("run", "latest_succeeded_rows_seen", exp.rows_seen, seen)
 
@@ -619,7 +642,7 @@ def verify_records(
         try:
             _begin_read_only(conn)
             report.add("session", "read_only", "on", _scalar(conn, "SHOW transaction_read_only"))
-            _check_registration(conn, prepared, report)
+            _check_registration(conn, prepared, report, counted=prepared.data_files)
             stored_rows = _scalar(
                 conn, f"SELECT count(*) FROM {table} WHERE source_id = :src", src=src.source_id
             )
@@ -635,18 +658,19 @@ def verify_records(
             )
             expected_fps = {i.fingerprint for i in processed.incidents}
             report.add("incidents", "expected", len(expected_fps), len(expected_fps & stored_fps))
-            report.add(
-                "integrity",
-                "linked_security_without_price_key",
-                0,
-                _scalar(
-                    conn,
-                    f"SELECT count(*) FROM {table} t WHERE t.source_id = :src "
-                    "AND t.security_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "
-                    "security_source_keys k WHERE k.security_id = t.security_id)",
-                    src=src.source_id,
-                ),
-            )
+            if src.links_securities:
+                report.add(
+                    "integrity",
+                    "linked_security_without_price_key",
+                    0,
+                    _scalar(
+                        conn,
+                        f"SELECT count(*) FROM {table} t WHERE t.source_id = :src "
+                        "AND t.security_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "
+                        "security_source_keys k WHERE k.security_id = t.security_id)",
+                        src=src.source_id,
+                    ),
+                )
             if deep:
                 _compare_records(conn, prepared, processed.accepted, report)
         finally:
@@ -661,7 +685,7 @@ def _compare_records(
     report: VerificationReport,
 ) -> None:
     src = prepared.source
-    columns = ", ".join((*src.natural_key, *src.observation, "file_id", "record_ref"))
+    columns = ", ".join((*src.natural_key, *src.observation, "file_id", src.provenance_column))
     n_key = len(src.natural_key)
     n_obs = len(src.observation)
     stored = {
@@ -683,9 +707,9 @@ def _compare_records(
         values = record.values or {}
         if got is None:
             diff["missing"] += 1
-        elif got[0] != tuple(values[c] for c in src.observation):
+        elif tuple(freeze(v) for v in got[0]) != tuple(freeze(values[c]) for c in src.observation):
             diff["observation_differs"] += 1
-        elif got[1] != (files.get(rel), record.record_ref):
+        elif got[1] != (files.get(rel), *provenance_value(src, record.record_ref).values()):
             diff["provenance_differs"] += 1
     diff["extra"] += len(stored)
     for kind in ("missing", "observation_differs", "provenance_differs", "extra"):

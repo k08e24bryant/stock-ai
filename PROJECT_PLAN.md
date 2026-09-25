@@ -299,7 +299,7 @@ Not done in Phase 2B (by design): corporate actions, adjusted prices, total
 return, stable production IDs, ticker/name history, authoritative suspensions
 or trading calendar, backtesting (contract, "Explicit Non-Goals").
 
-### Phase 2C — corporate actions, dividends, adjusted prices — STATUS: IMPLEMENTED, PENDING REVIEW (2026-09-25)
+### Phase 2C — corporate actions, dividends, adjusted prices — STATUS: COMPLETE (2026-09-25)
 
 Design and results: [docs/data_sources/phase_2c_corporate_actions_design.md](docs/data_sources/phase_2c_corporate_actions_design.md).
 
@@ -314,7 +314,18 @@ Design and results: [docs/data_sources/phase_2c_corporate_actions_design.md](doc
       * factor build `ref-v1` (212 price factors, 2,202 dividend factors,
         verified with 0 differences);
       * price-adjusted and total-return series.
-* [ ] Owner review of the open items (design doc §6.5).
+* [x] Committed (`2a4677a`). The open items remain listed in the design doc §6.5.
+
+### Phase 2D — market indices and observed calendar — STATUS: IMPLEMENTED, PENDING REVIEW (2026-09-26)
+
+Design and results: [docs/data_sources/phase_2d_indices_design.md](docs/data_sources/phase_2d_indices_design.md).
+
+* [x] Audit: 56 index files and 63,919 rows, internally consistent. Three
+      trading days are missing from the stock data; they explain three
+      Phase 2C anomaly dates.
+* [x] `index_daily_values`, the `observed_trading_days` view, the index
+      loader (record-loader reuse), and the benchmark series. Load verified
+      16/16 (`--deep`); prices still 48/48.
 
 Not done in Phase 2C: security universe, delistings, and ticker history
 (CLAUDE.md §16); rights economics beyond the reference price; repair of the

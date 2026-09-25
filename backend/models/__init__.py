@@ -12,6 +12,8 @@ Contents
     * ``corporate_actions`` — Phase 2C corporate actions, dividends, and
       derived price-adjustment factors (see
       docs/data_sources/phase_2c_corporate_actions_design.md).
+    * ``indices`` — Phase 2D raw daily index values (see
+      docs/data_sources/phase_2d_indices_design.md).
 
 Naming convention
     Constraint names are generated deterministically so that Alembic produces
@@ -28,6 +30,7 @@ from backend.models.corporate_actions import (
     PriceAdjustmentFactor,
     ReferencePriceAnomalyDate,
 )
+from backend.models.indices import IndexDailyValue
 from backend.models.market_data import (
     DailyPrice,
     DataQualityIncident,
@@ -48,6 +51,7 @@ __all__ = [
     "DailyPrice",
     "DataQualityIncident",
     "DataSource",
+    "IndexDailyValue",
     "IngestionRun",
     "PriceAdjustmentFactor",
     "ReferencePriceAnomalyDate",

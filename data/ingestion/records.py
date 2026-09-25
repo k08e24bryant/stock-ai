@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import date
 from decimal import Decimal
@@ -118,13 +119,20 @@ class RecordSource(Protocol):
     source_name: str
     homepage_url: str | None
     parser_version: str
-    data_files: tuple[str, ...]
     table: Table
     natural_key: tuple[str, ...]
     observation: tuple[str, ...]
     date_column: str
+    # True: rows carry ``security_id`` / ``security_match`` (ticker-text link).
+    links_securities: bool
+    # Provenance column of the table: ``record_ref`` (text) or ``source_line`` (int).
+    provenance_column: str
 
     def read_manifest(self, root: Path) -> SnapshotManifest: ...
+
+    def select_data_files(self, relative_paths: Sequence[str]) -> tuple[str, ...]:
+        """The snapshot files holding records; raise `StructuralError` if absent."""
+        ...
 
     def parse(self, relative_path: str, data: bytes) -> list[RecordResult]: ...
 
@@ -140,6 +148,7 @@ class PreparedRecordSnapshot:
     entries: tuple[InventoryEntry, ...]
     content_sha256: str
     snapshot_id: str
+    data_files: tuple[str, ...]
 
 
 def prepare_record_snapshot(source: RecordSource, root: Path) -> PreparedRecordSnapshot:
@@ -147,14 +156,16 @@ def prepare_record_snapshot(source: RecordSource, root: Path) -> PreparedRecordS
     manifest = source.read_manifest(root)
     if manifest.source_id != source.source_id:
         raise StructuralError(f"manifest is for {manifest.source_id!r}, not {source.source_id!r}")
+    paths = list_snapshot_files(root)
+    data_files = source.select_data_files(paths)
+    if not data_files:
+        raise StructuralError(f"no data files found under {root}")
+    selected = set(data_files)
     entries: list[InventoryEntry] = []
-    for rel in list_snapshot_files(root):
+    for rel in paths:
         data = read_bytes(root / rel)
-        rows = len(source.parse(rel, data)) if rel in source.data_files else 0
+        rows = len(source.parse(rel, data)) if rel in selected else 0
         entries.append(InventoryEntry(rel, sha256_hex(data), len(data), FileRole.OTHER, rows, None))
-    missing = sorted(set(source.data_files) - {e.relative_path for e in entries})
-    if missing:
-        raise StructuralError(f"data files missing from the snapshot: {missing}")
     content = content_sha256(entries)
     return PreparedRecordSnapshot(
         root=root,
@@ -163,6 +174,7 @@ def prepare_record_snapshot(source: RecordSource, root: Path) -> PreparedRecordS
         entries=tuple(entries),
         content_sha256=content,
         snapshot_id=derive_snapshot_id(source.source_id, manifest.revision, content),
+        data_files=tuple(data_files),
     )
 
 
@@ -177,8 +189,13 @@ class ProcessedRecords:
     incidents: tuple[IncidentDraft, ...]
 
 
+def freeze(value: Any) -> Any:
+    """Hashable, comparable form of a column value (arrays become tuples)."""
+    return tuple(value) if isinstance(value, list) else value
+
+
 def _observation(source: RecordSource, values: dict[str, Any]) -> tuple[Any, ...]:
-    return tuple(values[c] for c in source.observation)
+    return tuple(freeze(values[c]) for c in source.observation)
 
 
 def process_records(prepared: PreparedRecordSnapshot) -> ProcessedRecords:
@@ -188,7 +205,7 @@ def process_records(prepared: PreparedRecordSnapshot) -> ProcessedRecords:
     incidents: list[IncidentDraft] = []
     seen = rejected = collapsed = 0
     groups: dict[tuple[Any, ...], list[tuple[str, RecordResult]]] = defaultdict(list)
-    for rel in source.data_files:
+    for rel in prepared.data_files:
         data = read_bytes(prepared.root / rel)
         if sha256_hex(data) != by_path[rel].sha256:
             raise StructuralError(f"{rel} changed since it was inventoried")
@@ -295,6 +312,13 @@ def dry_run_records(prepared: PreparedRecordSnapshot) -> dict[str, Any]:
     }
 
 
+def provenance_value(source: RecordSource, record_ref: str) -> dict[str, Any]:
+    """The table's provenance column for a record (text ref or integer line)."""
+    if source.provenance_column == "source_line":
+        return {"source_line": int(record_ref)}
+    return {"record_ref": record_ref}
+
+
 # ============================================================ database load
 
 
@@ -371,26 +395,28 @@ class RecordLoader:
             rows_seen=processed.seen,
             rows_rejected=processed.rejected,
             rows_collapsed_duplicates=processed.collapsed,
-            files_processed=len(src.data_files),
+            files_processed=len(prepared.data_files),
         )
         match_keys = sorted(
             {r.match_key for _, r in processed.accepted.values() if r.match_key is not None}
         )
-        securities: dict[str, int] = {
-            key: int(sid)
-            for key, sid in conn.execute(
-                text(
-                    "SELECT source_key, security_id FROM security_source_keys "
-                    "WHERE source_id = :src AND source_key = ANY(:keys)"
-                ),
-                {"src": self.price_source_id, "keys": match_keys},
-            )
-        }
+        securities: dict[str, int] = {}
+        if src.links_securities:
+            securities = {
+                key: int(sid)
+                for key, sid in conn.execute(
+                    text(
+                        "SELECT source_key, security_id FROM security_source_keys "
+                        "WHERE source_id = :src AND source_key = ANY(:keys)"
+                    ),
+                    {"src": self.price_source_id, "keys": match_keys},
+                )
+            }
         table = src.table
         key_cols = [table.c[c] for c in src.natural_key]
         obs_cols = [table.c[c] for c in src.observation]
         existing = {
-            tuple(row[: len(key_cols)]): tuple(row[len(key_cols) :])
+            tuple(row[: len(key_cols)]): tuple(freeze(v) for v in row[len(key_cols) :])
             for row in conn.execute(
                 select(*key_cols, *obs_cols).where(table.c.source_id == src.source_id)
             )
@@ -403,20 +429,20 @@ class RecordLoader:
             incoming = _observation(src, values)
             stored = existing.get(key)
             if stored is None:
-                security_id = securities.get(record.match_key) if record.match_key else None
-                new_rows.append(
-                    {
-                        **values,
-                        "source_id": src.source_id,
-                        "security_id": security_id,
-                        "security_match": "unmatched"
-                        if security_id is None
-                        else "ticker_text_match",
-                        "file_id": file_ids[rel],
-                        "record_ref": record.record_ref,
-                        "ingestion_run_id": run_id,
-                    }
-                )
+                row: dict[str, Any] = {
+                    **values,
+                    "source_id": src.source_id,
+                    "file_id": file_ids[rel],
+                    "ingestion_run_id": run_id,
+                    **provenance_value(src, record.record_ref),
+                }
+                if src.links_securities:
+                    security_id = securities.get(record.match_key) if record.match_key else None
+                    row["security_id"] = security_id
+                    row["security_match"] = (
+                        "unmatched" if security_id is None else "ticker_text_match"
+                    )
+                new_rows.append(row)
             elif stored == incoming:  # Decimal and date compare by value
                 counters.rows_unchanged += 1
             else:
@@ -448,19 +474,21 @@ class RecordLoader:
         counters.securities_resolved = len(securities)
         if not counters.consistent():
             raise RuntimeError(f"row counters are inconsistent: {asdict(counters)}")
-        summary = {
+        summary: dict[str, Any] = {
             "mode": "load",
             "source_id": src.source_id,
             "snapshot_id": prepared.snapshot_id,
             "parser_version": src.parser_version,
-            "security_link": {
+            "table": src.table.name,
+        }
+        if src.links_securities:
+            summary["security_link"] = {
                 "price_source_id": self.price_source_id,
                 "method": "ticker_text_match (development heuristic)",
                 "tickers_seen": len(match_keys),
                 "tickers_matched": len(securities),
                 "rows_inserted_unmatched": sum(1 for r in new_rows if r["security_id"] is None),
-            },
-        }
+            }
         return counters, summary
 
 
@@ -471,8 +499,10 @@ __all__ = [
     "RecordResult",
     "RecordSource",
     "dry_run_records",
+    "freeze",
     "jsonable",
     "normalize_ticker",
     "prepare_record_snapshot",
     "process_records",
+    "provenance_value",
 ]

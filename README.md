@@ -7,8 +7,9 @@ analysis into an **explainable** research assistant. It is explicitly *not* a
 black-box price predictor — see [CLAUDE.md](CLAUDE.md) for the full philosophy
 and [PROJECT_PLAN.md](PROJECT_PLAN.md) for the roadmap.
 
-> **Status: Phase 2C (corporate actions, dividends, adjusted prices) implemented,
-> pending review.** 186 tests pass. The development database holds the Pholenk snapshot
+> **Status: Phase 2D (market indices, observed trading calendar) implemented,
+> pending review.** 195 tests pass. Phase 2C (corporate actions, dividends,
+> adjusted prices) is committed. The development database holds the Pholenk snapshot
 > `9bb3b26`: 1,289,820 raw daily prices for 983 securities, 2020-01-02 →
 > 2026-05-29, loaded and verified on 2026-09-25.
 > PostgreSQL 17 and Redis 7 run in Docker and are reachable from the app.
@@ -146,10 +147,12 @@ alembic upgrade head                         # apply
 alembic downgrade -1                         # roll back one revision
 ```
 
-Two migrations exist:
+Three migrations exist:
 
 * `1c1d7048b74f`: the Phase 2B market-data schema (see
   [docs/data_sources/phase_2b_schema_design.md](docs/data_sources/phase_2b_schema_design.md));
+* `6117977fb001`: Phase 2D index values and the `observed_trading_days` view
+  (see [docs/data_sources/phase_2d_indices_design.md](docs/data_sources/phase_2d_indices_design.md));
 * `55a78b2c9066`: Phase 2C corporate actions, dividends, and adjustment
   factors (see [docs/data_sources/phase_2c_corporate_actions_design.md](docs/data_sources/phase_2c_corporate_actions_design.md)).
 
@@ -192,6 +195,8 @@ Implementation code so far:
   `data/ingestion/idx_bei_actions.py` and `data/ingestion/idx_dividends.py`
   (source adapters), `data/features/adjustment_factors.py`, and
   `data/features/adjusted_prices.py`.
+* Phase 2D: `backend/models/indices.py`, `data/ingestion/pholenk_indices.py`,
+  and `data/features/index_series.py` (IHSG and other benchmarks).
 
 Every other package contains only a docstring stating its responsibility.
 
@@ -236,6 +241,7 @@ snapshots live under `data/raw/`, each with a `manifest.json`):
 python -m data.ingestion.load_snapshot idx-bei-actions data/raw/nichsedge-idx-bei/idx-bei-34903ce            # dry run
 python -m data.ingestion.load_snapshot idx-dividends data/raw/dimasirginsyh-idx-dividends/indonesia-stock-dividends-92115bf
 python -m data.features.adjustment_factors            # dry run; --execute writes, --verify compares
+python -m data.ingestion.load_snapshot pholenk-indices data/raw/pholenk/IDX-Dataset-9bb3b26   # 56 index files
 ```
 
 See [docs/data_sources/phase_2c_corporate_actions_design.md](docs/data_sources/phase_2c_corporate_actions_design.md) for the method, the series to use

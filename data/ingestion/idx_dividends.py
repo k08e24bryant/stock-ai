@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -134,7 +135,8 @@ class IdxDividendsSource:
     source_name: str = "indonesia-stock-dividends cash dividends (development source)"
     homepage_url: str | None = SOURCE_HOMEPAGE
     parser_version: str = PARSER_VERSION
-    data_files: tuple[str, ...] = (DATA_FILE,)
+    links_securities: bool = True
+    provenance_column: str = "record_ref"
     table: Table = cast(Table, CashDividend.__table__)
     natural_key: tuple[str, ...] = ("source_ticker", "ex_date")
     observation: tuple[str, ...] = (
@@ -154,6 +156,11 @@ class IdxDividendsSource:
             default_source_url=SOURCE_HOMEPAGE,
             default_licence="none (LICENSE UNCLEAR); upstream mitbal/daguerreo-data",
         )
+
+    def select_data_files(self, relative_paths: Sequence[str]) -> tuple[str, ...]:
+        if DATA_FILE not in relative_paths:
+            raise StructuralError(f"data files missing from the snapshot: {[DATA_FILE]}")
+        return (DATA_FILE,)
 
     def parse(self, relative_path: str, data: bytes) -> list[RecordResult]:
         if relative_path != DATA_FILE:

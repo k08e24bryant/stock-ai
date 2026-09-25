@@ -53,6 +53,7 @@ from data.ingestion.loader import (
     report_json,
 )
 from data.ingestion.pholenk import SOURCE_ID as PHOLENK_SOURCE_ID
+from data.ingestion.pholenk_indices import PholenkIndexSource
 from data.ingestion.pholenk_snapshot import PholenkSnapshotSource
 from data.ingestion.records import (
     PreparedRecordSnapshot,
@@ -69,6 +70,7 @@ SOURCES: dict[str, Callable[[], SnapshotSource]] = {"pholenk": PholenkSnapshotSo
 RECORD_SOURCES: dict[str, Callable[[], RecordSource]] = {
     "idx-bei-actions": IdxBeiActionsSource,
     "idx-dividends": IdxDividendsSource,
+    "pholenk-indices": PholenkIndexSource,
 }
 
 

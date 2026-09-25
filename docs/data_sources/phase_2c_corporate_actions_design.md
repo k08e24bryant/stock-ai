@@ -331,6 +331,9 @@ Validation on the real data (read-only, §3.5):
    They look like real corporate actions missing from DS-9. The other 11 are
    small, and their cause is unknown. All are applied (decision 5).
 3. **The anomaly dates are not repaired** (decision 4). Returns on them are
-   marked unreliable.
+   marked unreliable. Phase 2D found that three of the 18 (2023-02-07,
+   2024-03-26, 2024-07-16) directly follow a trading day **missing from the
+   stock data**. The factors on those dates are genuine; see
+   [Phase 2D §1.1](phase_2d_indices_design.md#11-three-trading-days-are-missing-from-the-stock-data).
 4. **Development heuristics:** the security link is by ticker text, and
    DS-7 amounts are assumed gross.

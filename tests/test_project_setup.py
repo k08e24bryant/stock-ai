@@ -118,7 +118,8 @@ def test_orm_metadata_contains_exactly_the_approved_tables() -> None:
     Phase 0 asserted an empty schema; Phase 2B.2 introduced the approved
     market-data tables (docs/data_sources/phase_2b_schema_design.md); Phase
     2C-2 added corporate actions, dividends, and adjustment factors
-    (docs/data_sources/phase_2c_corporate_actions_design.md).
+    (docs/data_sources/phase_2c_corporate_actions_design.md); Phase 2D added
+    index values (docs/data_sources/phase_2d_indices_design.md).
     """
     from backend.models import Base, metadata
 
@@ -137,4 +138,5 @@ def test_orm_metadata_contains_exactly_the_approved_tables() -> None:
         "adjustment_builds",
         "price_adjustment_factors",
         "reference_price_anomaly_dates",
+        "index_daily_values",
     }, "Schema changed -- update this assertion and write a reviewed migration."
