@@ -72,6 +72,7 @@ INCIDENT_TYPES = (
     "hard_invalid_record",
     "source_ticker_column_mismatch",
     "snapshot_content_mismatch",
+    "malformed_optional_field",
 )
 INCIDENT_STATUSES = ("open", "resolved", "accepted")
 INCIDENT_SEVERITIES = ("error", "warning", "info")

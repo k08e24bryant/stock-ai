@@ -30,6 +30,7 @@ Example
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -106,6 +107,38 @@ def content_sha256(entries: Iterable[InventoryEntry]) -> str:
     return digest.hexdigest()
 
 
+def read_manifest(
+    root: Path, *, source_id: str, default_source_url: str, default_licence: str
+) -> SnapshotManifest:
+    """Read ``<root>/manifest.json`` written when the snapshot was downloaded.
+
+    Raises `StructuralError` when the file is missing or unreadable, belongs to
+    another source, or lacks ``revision`` / ``retrieved_at``.
+    """
+    path = root / MANIFEST_NAME
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StructuralError(f"cannot read {path}: {exc}") from exc
+    if raw.get("source_id") != source_id:
+        raise StructuralError(f"manifest source_id is {raw.get('source_id')!r}")
+    try:
+        retrieved_at = datetime.fromisoformat(str(raw["retrieved_at"]).replace("Z", "+00:00"))
+        licence = str(raw.get("licence", default_licence))
+        read_on = raw.get("licence_read_on")
+        archive = raw.get("archive_sha256")
+        return SnapshotManifest(
+            source_id=source_id,
+            source_url=str(raw.get("source_url", default_source_url)),
+            revision=str(raw["revision"]),
+            archive_sha256=str(archive) if archive else None,
+            retrieved_at=retrieved_at,
+            licence_reference=f"{licence}; read {read_on}" if read_on else licence,
+        )
+    except (KeyError, ValueError) as exc:
+        raise StructuralError(f"{path}: incomplete manifest ({exc})") from exc
+
+
 def derive_snapshot_id(source_id: str, revision: str, content_hash: str) -> str:
     """Deterministic snapshot identifier (matches the database CHECK constraint)."""
     return f"{source_id}:{revision}:{content_hash[:16]}"
@@ -121,5 +154,6 @@ __all__ = [
     "derive_snapshot_id",
     "list_snapshot_files",
     "read_bytes",
+    "read_manifest",
     "sha256_hex",
 ]

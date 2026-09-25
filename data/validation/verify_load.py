@@ -47,7 +47,7 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy import Connection, Engine, Row, text
 
@@ -66,7 +66,12 @@ from data.ingestion.loader import (
     prepare_snapshot,
     report_json,
 )
-from data.ingestion.snapshot import StructuralError
+from data.ingestion.records import (
+    PreparedRecordSnapshot,
+    prepare_record_snapshot,
+    process_records,
+)
+from data.ingestion.snapshot import InventoryEntry, SnapshotManifest, StructuralError
 
 # ============================================================ report model
 
@@ -302,9 +307,27 @@ def _scalar(conn: Connection, sql: str, **params: Any) -> Any:
     return conn.execute(text(sql), params).scalar_one()
 
 
-def _check_registration(
-    conn: Connection, prepared: PreparedSnapshot, report: VerificationReport
-) -> bool:
+class _HasSourceId(Protocol):
+    @property
+    def source_id(self) -> str: ...
+
+
+class _Snapshot(Protocol):
+    """What registration checks need; both snapshot kinds provide it."""
+
+    @property
+    def source(self) -> _HasSourceId: ...
+    @property
+    def manifest(self) -> SnapshotManifest: ...
+    @property
+    def entries(self) -> tuple[InventoryEntry, ...]: ...
+    @property
+    def content_sha256(self) -> str: ...
+    @property
+    def snapshot_id(self) -> str: ...
+
+
+def _check_registration(conn: Connection, prepared: _Snapshot, report: VerificationReport) -> bool:
     snap = (
         conn.execute(
             text(
@@ -580,13 +603,102 @@ def verify(engine: Engine, prepared: PreparedSnapshot, *, deep: bool = False) ->
     return report
 
 
+def verify_records(
+    engine: Engine, prepared: PreparedRecordSnapshot, *, deep: bool = False
+) -> VerificationReport:
+    """Read-only verification of a record source (events, dividends) against its snapshot.
+
+    Expectations come from the loader's own pass 2 (no database access); the
+    same single-snapshot assumption as for prices applies to the row count.
+    """
+    processed = process_records(prepared)
+    src = prepared.source
+    table = src.table.name
+    report = VerificationReport(prepared.snapshot_id, deep)
+    with engine.connect() as conn:
+        try:
+            _begin_read_only(conn)
+            report.add("session", "read_only", "on", _scalar(conn, "SHOW transaction_read_only"))
+            _check_registration(conn, prepared, report)
+            stored_rows = _scalar(
+                conn, f"SELECT count(*) FROM {table} WHERE source_id = :src", src=src.source_id
+            )
+            report.add("records", "rows", len(processed.accepted), stored_rows)
+            stored_fps = set(
+                conn.execute(
+                    text(
+                        "SELECT details->>'fingerprint' FROM data_quality_incidents "
+                        "WHERE source_id = :src"
+                    ),
+                    {"src": src.source_id},
+                ).scalars()
+            )
+            expected_fps = {i.fingerprint for i in processed.incidents}
+            report.add("incidents", "expected", len(expected_fps), len(expected_fps & stored_fps))
+            report.add(
+                "integrity",
+                "linked_security_without_price_key",
+                0,
+                _scalar(
+                    conn,
+                    f"SELECT count(*) FROM {table} t WHERE t.source_id = :src "
+                    "AND t.security_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "
+                    "security_source_keys k WHERE k.security_id = t.security_id)",
+                    src=src.source_id,
+                ),
+            )
+            if deep:
+                _compare_records(conn, prepared, processed.accepted, report)
+        finally:
+            conn.rollback()
+    return report
+
+
+def _compare_records(
+    conn: Connection,
+    prepared: PreparedRecordSnapshot,
+    accepted: dict[tuple[Any, ...], tuple[str, Any]],
+    report: VerificationReport,
+) -> None:
+    src = prepared.source
+    columns = ", ".join((*src.natural_key, *src.observation, "file_id", "record_ref"))
+    n_key = len(src.natural_key)
+    n_obs = len(src.observation)
+    stored = {
+        tuple(r[:n_key]): (tuple(r[n_key : n_key + n_obs]), tuple(r[n_key + n_obs :]))
+        for r in conn.execute(
+            text(f"SELECT {columns} FROM {src.table.name} WHERE source_id = :src"),
+            {"src": src.source_id},
+        )
+    }
+    files = _pairs(
+        conn.execute(
+            text("SELECT relative_path, file_id FROM source_files WHERE snapshot_id = :sid"),
+            {"sid": prepared.snapshot_id},
+        ).all()
+    )
+    diff: Counter[str] = Counter()
+    for key, (rel, record) in accepted.items():
+        got = stored.pop(key, None)
+        values = record.values or {}
+        if got is None:
+            diff["missing"] += 1
+        elif got[0] != tuple(values[c] for c in src.observation):
+            diff["observation_differs"] += 1
+        elif got[1] != (files.get(rel), record.record_ref):
+            diff["provenance_differs"] += 1
+    diff["extra"] += len(stored)
+    for kind in ("missing", "observation_differs", "provenance_differs", "extra"):
+        report.add("rows", kind, 0, diff[kind])
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    from data.ingestion.load_snapshot import SOURCES
+    from data.ingestion.load_snapshot import RECORD_SOURCES, SOURCES
 
     parser = argparse.ArgumentParser(
         description="Read-only verification of a loaded snapshot (ingestion design §13)."
     )
-    parser.add_argument("source", choices=sorted(SOURCES))
+    parser.add_argument("source", choices=sorted({*SOURCES, *RECORD_SOURCES}))
     parser.add_argument("root", type=Path, help="snapshot directory containing manifest.json")
     parser.add_argument(
         "--expect-stock-files",
@@ -603,6 +715,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, default=None, help="write the JSON report here")
     args = parser.parse_args(argv)
 
+    if args.source in RECORD_SOURCES:
+        if args.expect_stock_files is not None:
+            print("--expect-stock-files applies to price sources only", file=sys.stderr)
+            return 2
+        try:
+            prepared_records = prepare_record_snapshot(RECORD_SOURCES[args.source](), args.root)
+        except StructuralError as exc:
+            print(f"structural error: {exc}", file=sys.stderr)
+            return 2
+        from backend.database import get_engine
+
+        return _finish_report(
+            verify_records(get_engine(), prepared_records, deep=args.deep), args.report
+        )
+
     try:
         prepared = prepare_snapshot(
             SOURCES[args.source](), args.root, expect_stock_files=args.expect_stock_files
@@ -613,10 +740,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from backend.database import get_engine
 
-    report = verify(get_engine(), prepared, deep=args.deep)
+    return _finish_report(verify(get_engine(), prepared, deep=args.deep), args.report)
+
+
+def _finish_report(report: VerificationReport, path: Path | None) -> int:
     print("\n".join(report.as_lines()))
-    if args.report is not None:
-        args.report.write_text(report_json(report.as_dict()) + "\n", encoding="utf-8")
+    if path is not None:
+        path.write_text(report_json(report.as_dict()) + "\n", encoding="utf-8")
     return 0 if report.ok else 1
 
 
@@ -624,4 +754,4 @@ if __name__ == "__main__":
     sys.exit(main())
 
 
-__all__ = ["Check", "VerificationReport", "main", "verify"]
+__all__ = ["Check", "VerificationReport", "main", "verify", "verify_records"]

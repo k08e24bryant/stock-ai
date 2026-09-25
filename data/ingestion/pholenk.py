@@ -63,7 +63,6 @@ from __future__ import annotations
 import argparse
 import csv
 import io
-import json
 import logging
 import re
 import sys
@@ -84,7 +83,13 @@ from data.ingestion.provider import (
     Security,
     TradingStatus,
 )
-from data.ingestion.snapshot import MANIFEST_NAME, SnapshotManifest, read_bytes, sha256_hex
+from data.ingestion.snapshot import (
+    SnapshotManifest,
+    StructuralError,
+    read_bytes,
+    sha256_hex,
+)
+from data.ingestion.snapshot import read_manifest as snapshot_read_manifest
 from data.validation.daily_prices import (
     Severity,
     build_quality_report,
@@ -393,28 +398,15 @@ def record_provenance(
 
 def read_manifest(root: Path) -> SnapshotManifest:
     """Read ``<root>/manifest.json`` written when the snapshot was downloaded."""
-    path = root / MANIFEST_NAME
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise PholenkFormatError(f"cannot read {path}: {exc}") from exc
-    if raw.get("source_id") != SOURCE_ID:
-        raise PholenkFormatError(f"manifest source_id is {raw.get('source_id')!r}")
-    try:
-        retrieved_at = datetime.fromisoformat(str(raw["retrieved_at"]).replace("Z", "+00:00"))
-        licence = str(raw.get("licence", DEFAULT_LICENCE_REF))
-        read_on = raw.get("licence_read_on")
-        archive = raw.get("archive_sha256")
-        return SnapshotManifest(
+        return snapshot_read_manifest(
+            root,
             source_id=SOURCE_ID,
-            source_url=str(raw.get("source_url", SOURCE_HOMEPAGE)),
-            revision=str(raw["revision"]),
-            archive_sha256=str(archive) if archive else None,
-            retrieved_at=retrieved_at,
-            licence_reference=f"{licence}; read {read_on}" if read_on else licence,
+            default_source_url=SOURCE_HOMEPAGE,
+            default_licence=DEFAULT_LICENCE_REF,
         )
-    except (KeyError, ValueError) as exc:
-        raise PholenkFormatError(f"{path}: incomplete manifest ({exc})") from exc
+    except StructuralError as exc:
+        raise PholenkFormatError(str(exc)) from exc
 
 
 # ---------------------------------------------------------------- provider

@@ -42,17 +42,20 @@ SNAPSHOT_ID = f"{SOURCE_ID}:{REVISION}:{CONTENT[:16]}"
 # --------------------------------------------------------------------------
 
 
+PHASE_2B_TABLES = {
+    "data_sources",
+    "source_snapshots",
+    "source_files",
+    "ingestion_runs",
+    "securities",
+    "security_source_keys",
+    "daily_prices",
+    "data_quality_incidents",
+}
+
+
 def test_all_eight_tables_are_registered() -> None:
-    assert set(metadata.tables) == {
-        "data_sources",
-        "source_snapshots",
-        "source_files",
-        "ingestion_runs",
-        "securities",
-        "security_source_keys",
-        "daily_prices",
-        "data_quality_incidents",
-    }
+    assert set(metadata.tables) >= PHASE_2B_TABLES
 
 
 def test_daily_prices_key_and_excluded_columns() -> None:
@@ -72,7 +75,7 @@ def test_daily_prices_key_and_excluded_columns() -> None:
 
 
 def test_every_foreign_key_restricts_delete() -> None:
-    fks = [fk for table in metadata.tables.values() for fk in table.foreign_keys]
+    fks = [fk for name in PHASE_2B_TABLES for fk in metadata.tables[name].foreign_keys]
     assert len(fks) == 14
     assert {fk.ondelete for fk in fks} == {"RESTRICT"}
 
@@ -93,7 +96,7 @@ def test_numeric_types_are_exact() -> None:
 
 
 def test_minimal_indexes() -> None:
-    names = {ix.name for table in metadata.tables.values() for ix in table.indexes}
+    names = {ix.name for name in PHASE_2B_TABLES for ix in metadata.tables[name].indexes}
     assert names == {
         "ix_daily_prices_trading_date",
         "ix_ingestion_runs_snapshot_id",

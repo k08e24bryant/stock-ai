@@ -299,13 +299,34 @@ Not done in Phase 2B (by design): corporate actions, adjusted prices, total
 return, stable production IDs, ticker/name history, authoritative suspensions
 or trading calendar, backtesting (contract, "Explicit Non-Goals").
 
+### Phase 2C — corporate actions, dividends, adjusted prices — STATUS: IMPLEMENTED, PENDING REVIEW (2026-09-25)
+
+Design and results: [docs/data_sources/phase_2c_corporate_actions_design.md](docs/data_sources/phase_2c_corporate_actions_design.md).
+
+* [x] 2C-1 Audit and design. The IDX reference price is the adjustment
+      signal. DS-9 is incomplete but gives correct split dates. IDX does
+      not adjust for cash dividends. 18 market-wide data-shift dates were
+      found in Pholenk.
+* [x] 2C-2 Implementation:
+      * migration `55a78b2c9066`;
+      * record-snapshot loader, and the DS-9 / DS-7 loads (verified 16/16
+        each, `--deep`);
+      * factor build `ref-v1` (212 price factors, 2,202 dividend factors,
+        verified with 0 differences);
+      * price-adjusted and total-return series.
+* [ ] Owner review of the open items (design doc §6.5).
+
+Not done in Phase 2C: security universe, delistings, and ticker history
+(CLAUDE.md §16); rights economics beyond the reference price; repair of the
+anomaly dates; pre-2020 history.
+
 ### Implementation (tables and jobs — start on development data; production source later)
 
 * [ ] `companies` table: identifiers, listing and delisting dates, ticker
       history, sector classification.
 * [ ] `prices` table: OHLCV plus an explicit adjusted/unadjusted distinction.
-* [ ] `corporate_actions` table: splits, reverse splits, rights issues,
-      dividends, bonus shares.
+* [x] Corporate-action events and cash dividends (development sources;
+      Phase 2C).
 * [ ] Ingestion job recording the retrieval timestamp of every fetch.
 * [ ] Every stored record keeps its source identity and retrieval time;
       cross-source disagreements are logged, never silently merged.
@@ -313,8 +334,9 @@ or trading calendar, backtesting (contract, "Explicit Non-Goals").
       suspensions, implausible jumps not explained by a corporate action.
 * [ ] Point-in-time universe construction that includes delisted companies
       (CLAUDE.md §16).
-* [ ] Document which price series is used for returns, for simulation, and for
-      display (CLAUDE.md §17).
+* [x] Document which price series is used for returns, for simulation, and for
+      display (CLAUDE.md §17): Phase 2C design §3.2 and
+      `data/features/adjusted_prices.py`.
 
 ---
 

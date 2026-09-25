@@ -7,6 +7,8 @@ significant decision is made.
 **Current phase:** Phase 2 — Market data, **in progress**. Phase 2A (Pholenk
 development ingestion) and Phase 2B (development persistence: data contract,
 schema, snapshot loader, real load, and post-load verification) are complete.
+Phase 2C (corporate actions, dividends, adjustment factors, adjusted series)
+is implemented and loaded on development data, pending review.
 **Mode:** **$0 development mode** (2026-09-24). Production data is **BLOCKED**
 on Q2 (no production provider selected; production licensing unresolved;
 doc §32). Development data is **UNBLOCKED**: public development sources are
@@ -42,9 +44,9 @@ valuation model, technical indicator, NLP, ML, backtester, or dashboard.
 | Python environment | `.venv` on Python 3.13.15 |
 | Package layout | All packages from CLAUDE.md §25 created. Implementation code: `backend/config.py`, `backend/database.py`, `backend/models/` (Phase 2B tables), the provider-neutral interface `data/ingestion/provider.py`, the Pholenk development provider `data/ingestion/pholenk.py`, the snapshot loader (`data/ingestion/snapshot.py`, `loader.py`, `pholenk_snapshot.py`, CLI `load_snapshot.py`), daily-price validation/reporting `data/validation/daily_prices.py`, and read-only post-load verification `data/validation/verify_load.py`. Every other package is a docstring-only placeholder |
 | Configuration | `backend/config.py` — env-driven `Settings` (Pydantic) |
-| Database | One migration, `1c1d7048b74f` (8 Phase 2B tables). The development database holds Pholenk snapshot `9bb3b26`: 1,289,820 `daily_prices`, 983 securities, 1,043 source files, 1 ingestion run, 1 expected incident (loaded 2026-09-25; verified 47/47, and 51/51 with `--deep`) |
+| Database | One migration, `1c1d7048b74f` (8 Phase 2B tables). The development database holds Pholenk snapshot `9bb3b26`: 1,289,820 `daily_prices`, 983 securities, 1,043 source files, 1 ingestion run, 1 expected incident (loaded 2026-09-25; verified 47/47, and 51/51 with `--deep`). Phase 2C (migration `55a78b2c9066`): 1,652 corporate-action events (DS-9), 5,934 cash dividends (DS-7), and factor build `d1daa2d6` (212 applied price factors, 2,202 dividend factors, 18 reference-price anomaly dates) |
 | Infrastructure | PostgreSQL 17.11 + Redis 7.4.11 via Docker Compose, both healthy |
-| Tests | 163 passing. Integration tests that write data use a throwaway database (`migrated_database` fixture), so `pytest` leaves the development database unchanged. Phase 0 ended with 38 tests, Phase 1 with 43, and Phase 2A with 81. |
+| Tests | 186 passing. Integration tests that write data use a throwaway database (`migrated_database` fixture), so `pytest` leaves the development database unchanged. Phase 0 ended with 38 tests, Phase 1 with 43, and Phase 2A with 81. |
 | Frontend | `dashboard/` is an empty placeholder |
 
 ### Git state (snapshot, 2026-09-25)
@@ -136,6 +138,7 @@ phase begins.
 | D23 | Data contract ([phase_2b_data_contract.md](docs/data_sources/phase_2b_data_contract.md)): regular-market data only; statuses `traded` / `no_regular_market_trade` / `unknown`; source `Previous` → `reference_price`; `available_at` unknown (never retrieval time); documented quality flags only | The source cannot establish suspensions, a prior close, or historical availability; nothing is inferred. |
 | D24 | Snapshot identity = source + full revision + content hash; one unique run per execution; `parser_version` on the run | Reloading identical content is recognisable and idempotent; retrieval time is not identity. |
 | D25 | `daily_prices` holds raw observations only; never overwritten; conflicts become incidents; every row traces to file, line, and run | Raw is immutable and auditable; adjustments come later in separate tables. |
+| D27 | Price-adjustment factors come from the IDX reference price (`reference_price / previous close`); DS-9 events only classify them; DS-7 supplies cash dividends for total return (amounts assumed gross); 18 market-wide anomaly dates are flagged, not repaired; unclassified factors are applied and flagged (Phase 2C, owner decisions 1–5, 2026-09-25) | The reference price is IDX's own adjustment and is more complete than any public event source; see docs/data_sources/phase_2c_corporate_actions_design.md. |
 | D26 | Real loads need `--execute` plus the exact full manifest revision; post-load state is checked by the read-only `verify_load` command; tests that write use a throwaway database | Prevents accidental writes and keeps the development database's evidence (and sequences) untouched. |
 
 Proposed in the requirements doc but **not yet adopted**: the per-field
@@ -147,8 +150,9 @@ published method (§24) — and the rights-issue methodology (§25).
 
 ## 6. Deliberately NOT done
 
-* No corporate actions, dividends, adjusted prices, or total return
-  (Phase 2B non-goals); `daily_prices` is raw only.
+* `daily_prices` stays raw. Adjusted and total-return series are derived
+  (Phase 2C); the security universe, delistings, and ticker history are not
+  handled yet.
 * No network data client and no scraper; the only provider reads a local, git-ignored file snapshot.
 * No ML, no NLP models, no feature engineering.
 * No FastAPI application object or routes.

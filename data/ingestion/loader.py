@@ -587,6 +587,213 @@ def _json_obj(prefix: str) -> str:
     )
 
 
+def try_source_lock(conn: Connection, source_id: str) -> bool:
+    """Take the per-source session advisory lock; False if another session holds it."""
+    got = conn.execute(
+        text("SELECT pg_try_advisory_lock(:k)"), {"k": advisory_lock_key(source_id)}
+    ).scalar_one()
+    conn.commit()
+    return bool(got)
+
+
+def release_source_lock(conn: Connection, source_id: str) -> None:
+    conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": advisory_lock_key(source_id)})
+    conn.commit()
+
+
+def register_snapshot(
+    conn: Connection,
+    *,
+    source_id: str,
+    source_name: str,
+    homepage_url: str | None,
+    parser_version: str,
+    manifest: SnapshotManifest,
+    entries: Sequence[InventoryEntry],
+    content_sha256: str,
+    snapshot_id: str,
+    root: Path,
+) -> tuple[uuid.UUID, dict[str, int], list[str]]:
+    """T0 for any source: data source, snapshot, file inventory, and a new run.
+
+    Returns the run id, ``relative_path -> file_id``, and the ids of other
+    snapshots with the same revision but different content (for a
+    ``snapshot_content_mismatch`` incident).
+    """
+    conn.execute(
+        pg_insert(DataSource)
+        .values(source_id=source_id, source_name=source_name, homepage_url=homepage_url)
+        .on_conflict_do_nothing(index_elements=["source_id"])
+    )
+    existing = conn.execute(
+        select(SourceSnapshot.snapshot_id).where(
+            SourceSnapshot.source_id == source_id,
+            SourceSnapshot.source_revision == manifest.revision,
+            SourceSnapshot.content_sha256 == content_sha256,
+        )
+    ).scalar_one_or_none()
+    mismatch_with: list[str] = []
+    if existing is None:
+        mismatch_with = sorted(
+            conn.execute(
+                select(SourceSnapshot.snapshot_id).where(
+                    SourceSnapshot.source_id == source_id,
+                    SourceSnapshot.source_revision == manifest.revision,
+                )
+            ).scalars()
+        )
+        conn.execute(
+            pg_insert(SourceSnapshot).values(
+                snapshot_id=snapshot_id,
+                source_id=source_id,
+                source_revision=manifest.revision,
+                content_sha256=content_sha256,
+                archive_sha256=manifest.archive_sha256,
+                source_url=manifest.source_url,
+                retrieved_at=manifest.retrieved_at,
+                licence_reference=manifest.licence_reference,
+                raw_storage_path=_storage_path(root),
+                file_count=len(entries),
+            )
+        )
+    conn.execute(
+        pg_insert(SourceFile)
+        .values(
+            [
+                {
+                    "snapshot_id": snapshot_id,
+                    "relative_path": e.relative_path,
+                    "sha256": e.sha256,
+                    "row_count": e.row_count,
+                    "source_key": e.source_key,
+                }
+                for e in entries
+            ]
+        )
+        .on_conflict_do_nothing(index_elements=["snapshot_id", "relative_path"])
+    )
+    stored = {
+        path: (file_id, digest)
+        for path, file_id, digest in conn.execute(
+            select(SourceFile.relative_path, SourceFile.file_id, SourceFile.sha256).where(
+                SourceFile.snapshot_id == snapshot_id
+            )
+        )
+    }
+    for e in entries:
+        if stored.get(e.relative_path, (None, None))[1] != e.sha256:
+            raise StructuralError(f"registered file differs: {e.relative_path}")
+    if len(stored) != len(entries):
+        raise StructuralError("registered file inventory differs from the snapshot")
+    run_id = uuid.uuid4()
+    conn.execute(
+        pg_insert(IngestionRun).values(
+            ingestion_run_id=run_id,
+            snapshot_id=snapshot_id,
+            parser_version=parser_version,
+            started_at=datetime.now(UTC),
+            status="running",
+        )
+    )
+    return run_id, {path: v[0] for path, v in stored.items()}, mismatch_with
+
+
+def snapshot_mismatch_incident(
+    revision: str, content_hash: str, other_snapshots: list[str]
+) -> IncidentDraft:
+    return IncidentDraft(
+        "snapshot_content_mismatch",
+        "error",
+        None,
+        None,
+        None,
+        None,
+        {
+            "source_revision": revision,
+            "content_sha256": content_hash,
+            "other_snapshots_same_revision": other_snapshots,
+        },
+    )
+
+
+def insert_incident_drafts(
+    conn: Connection,
+    source_id: str,
+    run_id: uuid.UUID,
+    drafts: Sequence[IncidentDraft],
+    *,
+    security_ids: dict[str, int],
+    file_ids: dict[str, int],
+) -> int:
+    """Insert drafts whose fingerprint is not already recorded for this source."""
+    if not drafts:
+        return 0
+    known = set(
+        conn.execute(
+            text(
+                "SELECT details->>'fingerprint' FROM data_quality_incidents "
+                "WHERE source_id = :s AND details->>'fingerprint' IS NOT NULL"
+            ),
+            {"s": source_id},
+        ).scalars()
+    )
+    rows: list[dict[str, Any]] = []
+    for draft in sorted(drafts, key=lambda d: d.fingerprint):
+        fp = draft.fingerprint
+        if fp in known:
+            continue
+        known.add(fp)
+        rows.append(
+            {
+                "ingestion_run_id": run_id,
+                "incident_type": draft.incident_type,
+                "severity": draft.severity,
+                "source_id": source_id,
+                "security_id": security_ids.get(draft.source_key) if draft.source_key else None,
+                "trading_date": draft.trading_date,
+                "file_id": file_ids.get(draft.relative_path) if draft.relative_path else None,
+                "source_line": draft.source_line,
+                "details": {**draft.details, "fingerprint": fp},
+            }
+        )
+    if rows:
+        conn.execute(pg_insert(DataQualityIncident).values(rows))
+    return len(rows)
+
+
+def finish_run(
+    conn: Connection, run_id: uuid.UUID, counters: Counters, summary: dict[str, Any]
+) -> None:
+    """Mark a run succeeded; `summary` also receives the full counter set."""
+    summary["counters"] = asdict(counters)
+    conn.execute(
+        update(IngestionRun)
+        .where(IngestionRun.ingestion_run_id == run_id)
+        .values(
+            status="succeeded",
+            completed_at=datetime.now(UTC),
+            rows_seen=counters.rows_seen,
+            rows_inserted=counters.rows_inserted,
+            rows_unchanged=counters.rows_unchanged,
+            rows_rejected=counters.rows_rejected,
+            rows_conflicted=counters.rows_conflicted,
+            validation_summary=summary,
+        )
+    )
+
+
+def mark_run_failed(conn: Connection, run_id: uuid.UUID, exc: BaseException) -> None:
+    conn.execute(
+        update(IngestionRun)
+        .where(IngestionRun.ingestion_run_id == run_id)
+        .values(
+            status="failed",
+            completed_at=datetime.now(UTC),
+            validation_summary={"error": f"{type(exc).__name__}: {exc}", "phase": "load"},
+        )
+    )
+
+
 class SnapshotLoader:
     """Loads a prepared snapshot into PostgreSQL (see module docstring)."""
 
@@ -604,11 +811,7 @@ class SnapshotLoader:
             )
         source_id = prepared.source.source_id
         with self.engine.connect() as conn:
-            got = conn.execute(
-                text("SELECT pg_try_advisory_lock(:k)"), {"k": advisory_lock_key(source_id)}
-            ).scalar_one()
-            conn.commit()
-            if not got:
+            if not try_source_lock(conn, source_id):
                 raise LoaderBusyError(f"another ingestion for {source_id!r} is running")
             try:
                 with conn.begin():
@@ -624,10 +827,7 @@ class SnapshotLoader:
                     raise LoadFailedError(run_id, exc) from exc
                 return result
             finally:
-                conn.execute(
-                    text("SELECT pg_advisory_unlock(:k)"), {"k": advisory_lock_key(source_id)}
-                )
-                conn.commit()
+                release_source_lock(conn, source_id)
 
     # -------------------------------------------------------------- T0
 
@@ -635,83 +835,17 @@ class SnapshotLoader:
         self, conn: Connection, prepared: PreparedSnapshot
     ) -> tuple[uuid.UUID, dict[str, int], int]:
         src = prepared.source
-        m = prepared.manifest
-        conn.execute(
-            pg_insert(DataSource)
-            .values(
-                source_id=src.source_id, source_name=src.source_name, homepage_url=src.homepage_url
-            )
-            .on_conflict_do_nothing(index_elements=["source_id"])
-        )
-        existing = conn.execute(
-            select(SourceSnapshot.snapshot_id).where(
-                SourceSnapshot.source_id == src.source_id,
-                SourceSnapshot.source_revision == m.revision,
-                SourceSnapshot.content_sha256 == prepared.content_sha256,
-            )
-        ).scalar_one_or_none()
-        mismatch_with: list[str] = []
-        if existing is None:
-            mismatch_with = sorted(
-                conn.execute(
-                    select(SourceSnapshot.snapshot_id).where(
-                        SourceSnapshot.source_id == src.source_id,
-                        SourceSnapshot.source_revision == m.revision,
-                    )
-                ).scalars()
-            )
-            conn.execute(
-                pg_insert(SourceSnapshot).values(
-                    snapshot_id=prepared.snapshot_id,
-                    source_id=src.source_id,
-                    source_revision=m.revision,
-                    content_sha256=prepared.content_sha256,
-                    archive_sha256=m.archive_sha256,
-                    source_url=m.source_url,
-                    retrieved_at=m.retrieved_at,
-                    licence_reference=m.licence_reference,
-                    raw_storage_path=_storage_path(prepared.root),
-                    file_count=len(prepared.entries),
-                )
-            )
-        conn.execute(
-            pg_insert(SourceFile)
-            .values(
-                [
-                    {
-                        "snapshot_id": prepared.snapshot_id,
-                        "relative_path": e.relative_path,
-                        "sha256": e.sha256,
-                        "row_count": e.row_count,
-                        "source_key": e.source_key,
-                    }
-                    for e in prepared.entries
-                ]
-            )
-            .on_conflict_do_nothing(index_elements=["snapshot_id", "relative_path"])
-        )
-        stored = {
-            path: (file_id, digest)
-            for path, file_id, digest in conn.execute(
-                select(SourceFile.relative_path, SourceFile.file_id, SourceFile.sha256).where(
-                    SourceFile.snapshot_id == prepared.snapshot_id
-                )
-            )
-        }
-        for e in prepared.entries:
-            if stored.get(e.relative_path, (None, None))[1] != e.sha256:
-                raise StructuralError(f"registered file differs: {e.relative_path}")
-        if len(stored) != len(prepared.entries):
-            raise StructuralError("registered file inventory differs from the snapshot")
-        run_id = uuid.uuid4()
-        conn.execute(
-            pg_insert(IngestionRun).values(
-                ingestion_run_id=run_id,
-                snapshot_id=prepared.snapshot_id,
-                parser_version=src.parser_version,
-                started_at=datetime.now(UTC),
-                status="running",
-            )
+        run_id, file_ids, mismatch_with = register_snapshot(
+            conn,
+            source_id=src.source_id,
+            source_name=src.source_name,
+            homepage_url=src.homepage_url,
+            parser_version=src.parser_version,
+            manifest=prepared.manifest,
+            entries=prepared.entries,
+            content_sha256=prepared.content_sha256,
+            snapshot_id=prepared.snapshot_id,
+            root=prepared.root,
         )
         created = 0
         if mismatch_with:
@@ -720,24 +854,14 @@ class SnapshotLoader:
                 prepared,
                 run_id,
                 [
-                    IncidentDraft(
-                        "snapshot_content_mismatch",
-                        "error",
-                        None,
-                        None,
-                        None,
-                        None,
-                        {
-                            "source_revision": m.revision,
-                            "content_sha256": prepared.content_sha256,
-                            "other_snapshots_same_revision": mismatch_with,
-                        },
+                    snapshot_mismatch_incident(
+                        prepared.manifest.revision, prepared.content_sha256, mismatch_with
                     )
                 ],
                 security_ids={},
                 file_ids={},
             )
-        return run_id, {p: v[0] for p, v in stored.items()}, created
+        return run_id, file_ids, created
 
     # -------------------------------------------------------------- T1
 
@@ -1013,72 +1137,22 @@ class SnapshotLoader:
         security_ids: dict[str, int],
         file_ids: dict[str, int],
     ) -> int:
-        """Insert drafts whose fingerprint is not already recorded for this source."""
-        if not drafts:
-            return 0
-        source_id = prepared.source.source_id
-        known = set(
-            conn.execute(
-                text(
-                    "SELECT details->>'fingerprint' FROM data_quality_incidents "
-                    "WHERE source_id = :s AND details->>'fingerprint' IS NOT NULL"
-                ),
-                {"s": source_id},
-            ).scalars()
+        return insert_incident_drafts(
+            conn,
+            prepared.source.source_id,
+            run_id,
+            drafts,
+            security_ids=security_ids,
+            file_ids=file_ids,
         )
-        rows: list[dict[str, Any]] = []
-        for draft in sorted(drafts, key=lambda d: d.fingerprint):
-            fp = draft.fingerprint
-            if fp in known:
-                continue
-            known.add(fp)
-            rows.append(
-                {
-                    "ingestion_run_id": run_id,
-                    "incident_type": draft.incident_type,
-                    "severity": draft.severity,
-                    "source_id": source_id,
-                    "security_id": security_ids.get(draft.source_key) if draft.source_key else None,
-                    "trading_date": draft.trading_date,
-                    "file_id": file_ids.get(draft.relative_path) if draft.relative_path else None,
-                    "source_line": draft.source_line,
-                    "details": {**draft.details, "fingerprint": fp},
-                }
-            )
-        if rows:
-            conn.execute(pg_insert(DataQualityIncident).values(rows))
-        return len(rows)
 
     # -------------------------------------------------------------- run status
 
     def _finish(self, conn: Connection, run_id: uuid.UUID, result: LoadResult) -> None:
-        c = result.counters
-        result.validation_summary["counters"] = asdict(c)
-        conn.execute(
-            update(IngestionRun)
-            .where(IngestionRun.ingestion_run_id == run_id)
-            .values(
-                status="succeeded",
-                completed_at=datetime.now(UTC),
-                rows_seen=c.rows_seen,
-                rows_inserted=c.rows_inserted,
-                rows_unchanged=c.rows_unchanged,
-                rows_rejected=c.rows_rejected,
-                rows_conflicted=c.rows_conflicted,
-                validation_summary=result.validation_summary,
-            )
-        )
+        finish_run(conn, run_id, result.counters, result.validation_summary)
 
     def _mark_failed(self, conn: Connection, run_id: uuid.UUID, exc: BaseException) -> None:
-        conn.execute(
-            update(IngestionRun)
-            .where(IngestionRun.ingestion_run_id == run_id)
-            .values(
-                status="failed",
-                completed_at=datetime.now(UTC),
-                validation_summary={"error": f"{type(exc).__name__}: {exc}", "phase": "load"},
-            )
-        )
+        mark_run_failed(conn, run_id, exc)
 
 
 def _storage_path(root: Path) -> str:
@@ -1109,9 +1183,16 @@ __all__ = [
     "SnapshotSource",
     "advisory_lock_key",
     "dry_run",
+    "finish_run",
+    "insert_incident_drafts",
     "iter_file_outcomes",
     "key_incidents",
+    "mark_run_failed",
     "prepare_snapshot",
     "process_file",
+    "register_snapshot",
+    "release_source_lock",
     "report_json",
+    "snapshot_mismatch_incident",
+    "try_source_lock",
 ]

@@ -89,11 +89,21 @@ def test_postgres_accepts_connections_with_configured_credentials() -> None:
 
 @pytest.mark.integration
 @pytest.mark.usefixtures("live_database")
-def test_alembic_upgrade_head_succeeds(project_root: Path) -> None:
-    """`alembic upgrade head` runs cleanly against the configured database."""
-    from alembic import command
+def test_configured_database_is_at_the_latest_migration(project_root: Path) -> None:
+    """Read-only: the configured database is at Alembic ``head``.
 
-    command.upgrade(Config(str(project_root / "alembic.ini")), "head")
+    This test never migrates the configured (development) database. Applying
+    the migrations is exercised on a throwaway database by the
+    ``migrated_database`` fixture. If this fails, run ``alembic upgrade head``
+    deliberately.
+    """
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(Config(str(project_root / "alembic.ini")))
+    with get_engine().connect() as connection:
+        current = set(MigrationContext.configure(connection).get_current_heads())
+    assert current == set(script.get_heads())
 
 
 @pytest.mark.integration

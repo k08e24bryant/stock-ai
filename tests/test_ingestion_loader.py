@@ -32,6 +32,7 @@ from backend.models import (
     SecuritySourceKey,
     SourceFile,
     SourceSnapshot,
+    metadata,
 )
 from data.ingestion import load_snapshot
 from data.ingestion.loader import (
@@ -295,10 +296,8 @@ def test_cli_defaults_to_dry_run_and_requires_confirmation(
 # Database fixtures (throwaway database)
 # --------------------------------------------------------------------------
 
-TABLES = (
-    "daily_prices, data_quality_incidents, security_source_keys, securities, "
-    "ingestion_runs, source_files, source_snapshots, data_sources"
-)
+# Every model table, so TRUNCATE never trips over a newer referencing table.
+TABLES = ", ".join(sorted(metadata.tables))
 
 
 @pytest.fixture
