@@ -2,10 +2,12 @@
 
 ## Status
 
-**IMPLEMENTED** (Phase 2B.3B), and **dry-run verified on the real snapshot**
-(Phase 2B.3C, 2026-09-25; see [Phase 2B.3C dry-run result](#phase-2b3c-dry-run-result)).
-The real database load (Phase 2B.3D) has **not** been run, so no rows have
-been inserted. The design was written in Phase 2B.3A on 2026-09-25.
+**IMPLEMENTED** (Phase 2B.3B), **dry-run verified on the real snapshot**
+(Phase 2B.3C), and **loaded into the development database** (Phase 2B.3D).
+All three happened on 2026-09-25; see
+[Phase 2B.3C dry-run result](#phase-2b3c-dry-run-result) and
+[Phase 2B.3D load result](#phase-2b3d-load-result). The design was written in
+Phase 2B.3A, also on 2026-09-25.
 Implementation: `data/ingestion/{snapshot,loader,pholenk_snapshot,load_snapshot}.py`.
 
 Authoritative inputs: [Phase 2B Data Contract](phase_2b_data_contract.md),
@@ -67,6 +69,61 @@ command above.
 An independent recount from the raw CSV text (csv module only, not the
 loader's parser) gave the same row, open-zero, zero-volume, non-regular,
 weekend, and duplicate counts.
+
+## Phase 2B.3D load result
+
+On 2026-09-25 (07:44:30–07:47:31 UTC, about 3 minutes) the snapshot was loaded
+into the local development database. The load ran at commit `5395974`, with
+the database at migration `1c1d7048b74f`:
+
+```
+python -m data.ingestion.load_snapshot pholenk data/raw/pholenk/IDX-Dataset-9bb3b26/ --expect-stock-files 983 --execute --confirm-revision 9bb3b26bd28ab46bc2f3e74a7c03805ce053301b
+```
+
+| Item | Result |
+| --- | --- |
+| `ingestion_run_id` | `32347da0-0b74-463e-9cda-574f40fd2801`, status `succeeded`, parser `pholenk-csv-2` |
+| `snapshot_id` | `pholenk-idx-dataset:9bb3b26bd28ab46bc2f3e74a7c03805ce053301b:97431567195b764a` |
+| Run counters | seen 1,289,820; inserted 1,289,820; unchanged 0; rejected 0; conflicted 0; collapsed 0; invariant holds |
+| Files | 983 of 983 stock files processed, 0 failed; 1,043 `source_files` rows |
+| Rows per table | `daily_prices` 1,289,820; `securities` 983; `security_source_keys` 983; `source_snapshots` 1; `ingestion_runs` 1; `data_quality_incidents` 1 (the expected `source_ticker_column_mismatch` warning for `TRUE`) |
+| Statuses and flags | Match the expectations table above exactly |
+| `TRUE` | Ticker `TRUE`, 1,189 rows, key flag set, incident records the raw value `"True"` |
+
+Post-load verification ran in a single read-only transaction. It found:
+
+* 0 violations in 33 database integrity checks, covering:
+  * duplicate keys;
+  * OHLC relationships and positivity;
+  * negative volume, value, or frequency;
+  * the status vocabulary, and status consistency with volume;
+  * zero-volume rows with open/high/low set;
+  * NULL provenance fields and orphan foreign keys;
+  * flag vocabulary and ordering;
+  * provenance consistency: file key, line range, per-file row counts,
+    rows from other runs;
+  * stock-file metadata;
+  * the absence of adjustment columns.
+* 0 differences between every stored row and the raw CSV text, compared
+  field by field with the csv module (not the loader's parser). Open, high,
+  low, close, reference price, volume, value, frequency, and source line all
+  matched. Open is NULL exactly where the raw file has 0.
+* 0 differences between the snapshot identity and file hashes recomputed from
+  disk and the registered ones.
+* A read-only simulation of a second identical load, using the loader's own
+  pass 2 and comparison rule. It would classify 0 rows as new, 1,289,820 as
+  unchanged, and 0 as conflicts, with no provenance change. The only row a
+  rerun adds is one `ingestion_runs` row.
+
+**Identity-sequence note.** Loaded `security_id` values are 474–1456 and
+`file_id` values are 485–1527. The IDs are contiguous, and security IDs follow
+sorted `source_key` order. They do not start at 1 because
+`tests/test_market_data_schema.py` runs against the development database in
+rolled-back transactions, and PostgreSQL sequences do not roll back. The
+determinism in §3 therefore covers the assignment *order*, not the absolute ID
+values. Those tests use their own `test-source` and cannot collide with the
+loaded rows. Moving them to a throwaway database, as the loader tests already
+do, is an open follow-up.
 
 ---
 
